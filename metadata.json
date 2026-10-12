@@ -1,0 +1,7 @@
+{
+  "name": "GESTIONALE AZIENDALE v.1.0",
+  "description": "Gestionale Aziendale",
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
