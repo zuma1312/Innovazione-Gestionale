@@ -28,6 +28,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
@@ -52,12 +53,16 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { DocumentEditor, type DocFormValue } from "@/components/DocumentEditor";
+import type { DocFormValue } from "@/components/DocumentEditor";
 import { DocPreviewModal, type DocPreviewData } from "@/components/DocPreviewModal";
-import { DocCreateModal, type DocCreateInitialData } from "@/components/DocCreateModal";
+import {
+  InterventoQuickCreateModal,
+  type InterventoQuickInitialData,
+} from "@/components/interventi/InterventoQuickCreateModal";
+import { InterventoInlineEditor } from "@/components/interventi/InterventoInlineEditor";
 import { DEFAULT_COMPANY, useCompany, useList, useRemove, useSave } from "@/hooks/data";
 import { usePaymentMethods } from "@/hooks/usePaymentMethods";
-import { docTotals, formatCurrency, formatDate, nextNumber } from "@/lib/doc";
+import { docTotals, emptyItem, formatCurrency, formatDate, nextNumber } from "@/lib/doc";
 import type { DocItem, DocTemplate } from "@/lib/doc";
 
 export const Route = createFileRoute("/_authenticated/interventi")({
@@ -97,11 +102,13 @@ function InterventiPage() {
   const save = useSave("interventions");
   const remove = useRemove("interventions");
 
-  const [open, setOpen] = useState(false);
-  const [createModalOpen, setCreateModalOpen] = useState(false);
-  const [form, setForm] = useState<DocFormValue | null>(null);
+  // Intervento correntemente in compilazione diretta inline (senza modale esterna)
+  const [editingIntervention, setEditingIntervention] = useState<any | null>(null);
 
-  // Selezione multipla (stile screenshot)
+  // Scheda apertura rapida con poche informazioni
+  const [quickCreateOpen, setQuickCreateOpen] = useState(false);
+
+  // Selezione multipla
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [previewData, setPreviewData] = useState<DocPreviewData | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -118,119 +125,230 @@ function InterventiPage() {
   const todayStr = new Date().toISOString().slice(0, 10);
   const today = useMemo(() => new Date(), []);
 
-  const toItems = (row: any): DocItem[] => [
-    {
-      description: `Manodopera (${row.hours ?? 1} h)`,
-      qty: Number(row.hours ?? 1),
-      unit_price: Number(row.hourly_rate ?? 35),
-    },
-    {
-      description: "Materiali impiegati",
-      qty: 1,
-      unit_price: Number(row.materials_cost ?? 0),
-    },
-  ];
+  const prefix = company.data?.intervention_prefix || "INT";
+  const defaultVatRate = Number(company.data?.default_vat_rate ?? 22);
 
-  const vatRate = Number(company.data?.default_vat_rate ?? 22);
+  const toItems = (row: any): DocItem[] => {
+    if (row.items && Array.isArray(row.items) && row.items.length > 0) {
+      return row.items;
+    }
+    return [
+      {
+        description: `Manodopera (${row.hours ?? 1} h)`,
+        qty: Number(row.hours ?? 1),
+        unit_price: Number(row.hourly_rate ?? 35),
+      },
+      {
+        description: "Materiali e ricambi impiegati",
+        qty: 1,
+        unit_price: Number(row.materials_cost ?? 0),
+      },
+    ];
+  };
 
   const calculateTotal = useCallback(
     (row: any) => {
-      return docTotals(toItems(row), vatRate).total;
+      const itms = toItems(row);
+      const vr = Number(row.vat_rate ?? defaultVatRate);
+      return docTotals(itms, vr).total;
     },
-    [vatRate],
+    [defaultVatRate],
   );
 
-  const openNew = () => {
+  // Apertura scheda rapida
+  const handleOpenQuickCreate = () => {
+    setQuickCreateOpen(true);
+  };
+
+  // Conferma scheda rapida: crea l'intervento e lo apre inline
+  const handleQuickCreateConfirm = async (data: InterventoQuickInitialData) => {
+    setQuickCreateOpen(false);
     const existingNumbers = (interventions.data ?? []).map((i: any) => i.number);
-    setForm({
-      client_id: null,
-      number: nextNumber("INT", existingNumbers),
-      date: todayStr,
+    const number = nextNumber(prefix, existingNumbers);
+
+    const initialItems: DocItem[] = [
+      {
+        description: "Manodopera tecnica specializzata (1 h)",
+        qty: 1,
+        unit_price: 45,
+      },
+    ];
+
+    const newIntervention: any = {
+      client_id: data.client_id,
+      number,
+      date: data.date,
       secondary_date: null,
-      items: toItems({}),
-      vat_rate: vatRate,
+      items: initialItems,
+      vat_rate: defaultVatRate,
       notes: "",
+      exclusions: "",
+      payment_conditions: "",
       status: "aperto",
-      template: "classico",
+      template: (company.data?.default_template as DocTemplate) || "classico",
+      title: data.title,
       body: "",
-      title: "",
-      cantiere: "",
+      cantiere: data.cantiere,
+      technician: data.technician || "Maurizio Tanforti",
       payment_method_id: defaultMethod?.id,
       payment_method: defaultMethod?.typeLabel,
       payment_iban: defaultMethod?.iban ?? "",
-    });
-    setOpen(true);
+    };
+
+    try {
+      const res = await save.mutateAsync({
+        client_id: newIntervention.client_id,
+        number: newIntervention.number,
+        title: newIntervention.title || `Intervento ${number}`,
+        description: "",
+        date: newIntervention.date,
+        hours: 1,
+        hourly_rate: 45,
+        materials_cost: 0,
+        items: newIntervention.items,
+        vat_rate: newIntervention.vat_rate,
+        notes: newIntervention.notes,
+        status: newIntervention.status,
+        template: newIntervention.template,
+        cantiere: newIntervention.cantiere,
+        technician: newIntervention.technician,
+        payment_method_id: newIntervention.payment_method_id,
+        payment_method: newIntervention.payment_method,
+        payment_iban: newIntervention.payment_iban,
+      });
+
+      setEditingIntervention({
+        ...newIntervention,
+        id: (res as any)?.id,
+      });
+      toast.success(`Intervento ${number} creato. Ora puoi compilarlo direttamente qui.`);
+    } catch {
+      toast.error("Errore durante la creazione dell'intervento.");
+    }
   };
 
-  const handleConfirmCreate = (data: DocCreateInitialData) => {
-    setCreateModalOpen(false);
-    const existingNumbers = (interventions.data ?? []).map((i: any) => i.number);
-    setForm({
-      client_id: data.client_id,
-      number: nextNumber("INT", existingNumbers),
-      date: data.date,
-      secondary_date: data.secondary_date,
-      items: toItems({}),
-      vat_rate: data.vat_rate,
-      notes: data.notes,
-      status: "aperto",
-      template: data.template,
-      body: "",
-      title: data.title,
-      cantiere: data.cantiere,
-      payment_method_id: data.payment_method_id,
-      payment_method: data.payment_method,
-      payment_iban: data.payment_iban,
-    });
-    setOpen(true);
+  // Salvataggio dell'intervento compilato inline
+  const handleSaveIntervention = async (val: any) => {
+    try {
+      const labour = val.items?.[0];
+      const materials = val.items?.[1];
+
+      await save.mutateAsync({
+        id: val.id,
+        client_id: val.client_id,
+        number: val.number,
+        title: val.title || val.body?.split("\n")[0]?.slice(0, 80) || `Intervento ${val.number}`,
+        description: val.body ?? "",
+        date: val.date,
+        hours: Number(labour?.qty ?? 1),
+        hourly_rate: Number(labour?.unit_price ?? 35),
+        materials_cost: Number(materials?.unit_price ?? 0),
+        items: val.items,
+        vat_rate: val.vat_rate,
+        notes: val.notes,
+        exclusions: val.exclusions,
+        payment_conditions: val.payment_conditions,
+        status: val.status,
+        template: val.template,
+        cantiere: val.cantiere,
+        technician: val.technician,
+        payment_method_id: val.payment_method_id,
+        payment_method: val.payment_method,
+        payment_iban: val.payment_iban,
+      });
+      toast.success(`Intervento ${val.number} salvato con successo.`);
+    } catch {
+      toast.error("Errore durante il salvataggio dell'intervento.");
+    }
   };
 
-  const handleDuplicate = (row: any) => {
-    const existingNumbers = (interventions.data ?? []).map((item: any) => item.number);
-    setForm({
-      client_id: row.client_id,
-      number: nextNumber("INT", existingNumbers),
-      date: todayStr,
-      secondary_date: null,
-      items: toItems(row),
-      vat_rate: Number(company.data?.default_vat_rate ?? 22),
-      notes: row.notes || "",
-      status: "aperto",
-      template: (row.template as DocTemplate) || "classico",
-      body: row.description || row.title || "",
-      title: `${row.title || ""} (Copia)`,
-      payment_method_id: row.payment_method_id || defaultMethod?.id,
-      payment_method: row.payment_method || defaultMethod?.typeLabel,
-      payment_iban: row.payment_iban ?? defaultMethod?.iban ?? "",
-    });
-    setOpen(true);
-    toast.info("Intervento duplicato in una nuova bozza.");
-  };
-
-  const handleOpenEdit = (row: any) => {
-    setForm({
+  // Apertura di un intervento esistente per modifica inline
+  const handleOpenEditInline = (row: any) => {
+    setEditingIntervention({
       id: row.id,
       client_id: row.client_id,
       number: row.number,
       date: row.date,
       secondary_date: null,
       items: toItems(row),
-      vat_rate: Number(company.data?.default_vat_rate ?? 22),
-      notes: "",
-      status: row.status,
-      template: row.template as DocTemplate,
-      body: row.description || row.title || "",
+      vat_rate: Number(row.vat_rate ?? defaultVatRate),
+      notes: row.notes || "",
+      exclusions: row.exclusions || "",
+      payment_conditions: row.payment_conditions || "",
+      status: row.status || "aperto",
+      template: (row.template as DocTemplate) || "classico",
+      title: row.title || "",
+      body: row.description || row.body || "",
+      cantiere: row.cantiere || "",
+      technician: row.technician || "Maurizio Tanforti",
       payment_method_id: row.payment_method_id,
       payment_method: row.payment_method,
       payment_iban: row.payment_iban,
     });
-    setOpen(true);
   };
 
+  // Duplicazione di un intervento
+  const handleDuplicate = async (row: any) => {
+    const existingNumbers = (interventions.data ?? []).map((item: any) => item.number);
+    const newNumber = nextNumber(prefix, existingNumbers);
+
+    const duplicatedIntervention: any = {
+      client_id: row.client_id,
+      number: newNumber,
+      date: todayStr,
+      secondary_date: null,
+      items: toItems(row),
+      vat_rate: Number(row.vat_rate ?? defaultVatRate),
+      notes: row.notes || "",
+      exclusions: row.exclusions || "",
+      payment_conditions: row.payment_conditions || "",
+      status: "aperto",
+      template: (row.template as DocTemplate) || "classico",
+      title: row.title ? `${row.title} (Copia)` : `Intervento ${newNumber}`,
+      body: row.description || row.body || "",
+      cantiere: row.cantiere || "",
+      technician: row.technician || "Maurizio Tanforti",
+      payment_method_id: row.payment_method_id || defaultMethod?.id,
+      payment_method: row.payment_method || defaultMethod?.typeLabel,
+      payment_iban: row.payment_iban ?? defaultMethod?.iban ?? "",
+    };
+
+    try {
+      const res = await save.mutateAsync({
+        client_id: duplicatedIntervention.client_id,
+        number: duplicatedIntervention.number,
+        title: duplicatedIntervention.title,
+        description: duplicatedIntervention.body,
+        date: duplicatedIntervention.date,
+        items: duplicatedIntervention.items,
+        vat_rate: duplicatedIntervention.vat_rate,
+        notes: duplicatedIntervention.notes,
+        exclusions: duplicatedIntervention.exclusions,
+        payment_conditions: duplicatedIntervention.payment_conditions,
+        status: duplicatedIntervention.status,
+        template: duplicatedIntervention.template,
+        cantiere: duplicatedIntervention.cantiere,
+        technician: duplicatedIntervention.technician,
+        payment_method_id: duplicatedIntervention.payment_method_id,
+        payment_method: duplicatedIntervention.payment_method,
+        payment_iban: duplicatedIntervention.payment_iban,
+      });
+
+      setEditingIntervention({
+        ...duplicatedIntervention,
+        id: (res as any)?.id,
+      });
+      toast.success(`Intervento duplicato con numero ${newNumber}.`);
+    } catch {
+      toast.error("Errore durante la duplicazione dell'intervento.");
+    }
+  };
+
+  // Anteprima PDF
   const handleOpenPreview = (row: any) => {
     const client = (clients.data ?? []).find((c: any) => c.id === row.client_id);
     setPreviewData({
-      docLabel: "Intervento",
+      docLabel: "Rapporto di Intervento",
       number: row.number,
       date: row.date,
       secondaryDateLabel: "Data fine lavori",
@@ -240,15 +358,47 @@ function InterventiPage() {
       clientLines: [
         client?.address ?? "",
         [client?.zip, client?.city].filter(Boolean).join(" "),
-        client?.vat_number ? `P.IVA ${client.vat_number}` : "",
+        client?.vat_number ? `P.IVA/CF ${client.vat_number}` : "",
         client?.email ?? "",
       ],
       items: toItems(row),
-      vatRate: Number(company.data?.default_vat_rate ?? 22),
+      vatRate: Number(row.vat_rate ?? defaultVatRate),
       notes: row.notes || "",
+      exclusions: row.exclusions || "",
+      paymentConditions: row.payment_conditions || "",
       bodyText: row.description || row.title || undefined,
+      title: row.title,
+      cantiere: row.cantiere,
       paymentMethod: row.payment_method || defaultMethod?.typeLabel,
       paymentIban: row.payment_iban ?? defaultMethod?.iban ?? "",
+    });
+    setPreviewOpen(true);
+  };
+
+  const handleOpenPreviewFromInline = (val: any) => {
+    const client = (clients.data ?? []).find((c: any) => c.id === val.client_id);
+    setPreviewData({
+      docLabel: "Rapporto di Intervento",
+      number: val.number,
+      date: val.date,
+      template: val.template,
+      clientName: client?.name ?? "Cliente",
+      clientLines: [
+        client?.address ?? "",
+        [client?.zip, client?.city].filter(Boolean).join(" "),
+        client?.vat_number ? `P.IVA/CF ${client.vat_number}` : "",
+        client?.email ?? "",
+      ],
+      items: val.items,
+      vatRate: val.vat_rate,
+      notes: val.notes,
+      exclusions: val.exclusions,
+      paymentConditions: val.payment_conditions,
+      bodyText: val.body,
+      title: val.title,
+      cantiere: val.cantiere,
+      paymentMethod: val.payment_method,
+      paymentIban: val.payment_iban,
     });
     setPreviewOpen(true);
   };
@@ -304,33 +454,10 @@ function InterventiPage() {
     }
   };
 
-  const toggleSelectOne = (id: string) => {
-    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]));
-  };
-
-  const submit = async () => {
-    if (!form) return;
-    const labour = form.items[0];
-    const materials = form.items[1];
-    try {
-      await save.mutateAsync({
-        id: form.id,
-        client_id: form.client_id,
-        number: form.number,
-        title: form.body?.split("\n")[0]?.slice(0, 80) || `Intervento ${form.number}`,
-        description: form.body ?? "",
-        date: form.date,
-        hours: Number(labour?.qty ?? 1),
-        hourly_rate: Number(labour?.unit_price ?? 35),
-        materials_cost: Number(materials?.unit_price ?? 0),
-        status: form.status,
-        template: form.template,
-      });
-      toast.success("Intervento salvato con successo.");
-      setOpen(false);
-    } catch {
-      toast.error("Salvataggio non riuscito.");
-    }
+  const toggleSelectRow = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
+    );
   };
 
   const handleQuickStatusChange = async (row: any, newStatus: string) => {
@@ -368,51 +495,46 @@ function InterventiPage() {
 
   // Elenco tecnici unici
   const technicians = useMemo(() => {
-    const list = Array.from(
-      new Set(
-        allInterventions
-          .map((i: any) => i.technician?.trim())
-          .filter((t: string | undefined): t is string => Boolean(t)),
-      ),
-    );
-    list.sort();
-    return list;
+    const set = new Set<string>();
+    for (const row of allInterventions) {
+      if (row.technician?.trim()) set.add(row.technician.trim());
+    }
+    return Array.from(set).sort();
   }, [allInterventions]);
 
   // Indicatori rapidi (KPI)
   const stats = useMemo(() => {
-    const acc = {
-      all: allInterventions.length,
-      aperto: 0,
-      in_corso: 0,
-      completato: 0,
-      fatturato: 0,
-      totalValue: 0,
-    };
+    let countAperti = 0;
+    let countInCorso = 0;
+    let countCompletati = 0;
+    let countFatturati = 0;
+    let totalValue = 0;
 
     for (const row of allInterventions) {
-      const val = calculateTotal(row);
-      acc.totalValue += val;
-
-      if (row.status === "aperto") acc.aperto++;
-      else if (row.status === "in corso") acc.in_corso++;
-      else if (row.status === "completato") acc.completato++;
-      else if (row.status === "fatturato") acc.fatturato++;
+      const tot = calculateTotal(row);
+      totalValue += tot;
+      if (row.status === "completato") countCompletati++;
+      else if (row.status === "in corso") countInCorso++;
+      else if (row.status === "fatturato") countFatturati++;
+      else countAperti++;
     }
 
-    return acc;
+    return {
+      total: allInterventions.length,
+      aperti: countAperti,
+      inCorso: countInCorso,
+      completati: countCompletati,
+      fatturati: countFatturati,
+      totalValue,
+    };
   }, [allInterventions, calculateTotal]);
 
   // Filtraggio avanzato
   const filteredRows = useMemo(() => {
     return allInterventions.filter((row: any) => {
-      const client = allClients.find((c: any) => c.id === row.client_id);
-      const clientName = client?.name || "";
-      const clientPhone = client?.phone || "";
-      const clientCity = client?.city || "";
-
-      // Ricerca testuale
       const q = search.toLowerCase();
+      const client = allClients.find((c: any) => c.id === row.client_id);
+      const clientName = (client?.name || "").toLowerCase();
       const num = (row.number || "").toLowerCase();
       const title = (row.title || "").toLowerCase();
       const desc = (row.description || "").toLowerCase();
@@ -420,61 +542,33 @@ function InterventiPage() {
 
       if (
         search &&
+        !clientName.includes(q) &&
         !num.includes(q) &&
         !title.includes(q) &&
         !desc.includes(q) &&
-        !tech.includes(q) &&
-        !clientName.toLowerCase().includes(q) &&
-        !clientPhone.includes(q) &&
-        !clientCity.toLowerCase().includes(q)
+        !tech.includes(q)
       ) {
         return false;
       }
 
-      // Filtro stato
-      if (statusFilter !== "all" && row.status !== statusFilter) {
-        return false;
+      if (statusFilter !== "all" && row.status !== statusFilter) return false;
+      if (clientFilter !== "all" && row.client_id !== clientFilter) return false;
+      if (techFilter !== "all" && row.technician !== techFilter) return false;
+
+      if (amountFilter !== "all") {
+        const val = calculateTotal(row);
+        if (amountFilter === "under_150" && val >= 150) return false;
+        if (amountFilter === "150_500" && (val < 150 || val > 500)) return false;
+        if (amountFilter === "over_500" && val <= 500) return false;
       }
 
-      // Filtro cliente
-      if (clientFilter !== "all" && row.client_id !== clientFilter) {
-        return false;
-      }
+      if (periodFilter !== "all" && row.date) {
+        const d = new Date(row.date);
+        const diffDays = (today.getTime() - d.getTime()) / (1000 * 3600 * 24);
 
-      // Filtro tecnico
-      if (techFilter !== "all" && row.technician !== techFilter) {
-        return false;
-      }
-
-      // Filtro importo
-      const tot = calculateTotal(row);
-      if (amountFilter === "under_100" && tot >= 100) return false;
-      if (amountFilter === "100_300" && (tot < 100 || tot > 300)) return false;
-      if (amountFilter === "over_300" && tot <= 300) return false;
-
-      // Filtro periodo
-      if (periodFilter !== "all") {
-        const rowDate = new Date(row.date);
-        if (periodFilter === "today") {
-          if (row.date !== todayStr) return false;
-        } else if (periodFilter === "this_week") {
-          const sevenDaysAgo = new Date();
-          sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-          if (rowDate < sevenDaysAgo) return false;
-        } else if (periodFilter === "this_month") {
-          if (
-            rowDate.getFullYear() !== today.getFullYear() ||
-            rowDate.getMonth() !== today.getMonth()
-          ) {
-            return false;
-          }
-        } else if (periodFilter === "last_3_months") {
-          const threeMonthsAgo = new Date();
-          threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
-          if (rowDate < threeMonthsAgo) return false;
-        } else if (periodFilter === "this_year") {
-          if (rowDate.getFullYear() !== today.getFullYear()) return false;
-        }
+        if (periodFilter === "today" && diffDays > 1) return false;
+        if (periodFilter === "week" && diffDays > 7) return false;
+        if (periodFilter === "month" && diffDays > 30) return false;
       }
 
       return true;
@@ -490,31 +584,30 @@ function InterventiPage() {
     amountFilter,
     periodFilter,
     today,
-    todayStr,
   ]);
 
   const hasActiveFilters =
     search.trim() !== "" ||
     statusFilter !== "all" ||
-    periodFilter !== "all" ||
     clientFilter !== "all" ||
     techFilter !== "all" ||
-    amountFilter !== "all";
+    amountFilter !== "all" ||
+    periodFilter !== "all";
 
   const activeFilterCount =
     (statusFilter !== "all" ? 1 : 0) +
-    (periodFilter !== "all" ? 1 : 0) +
     (clientFilter !== "all" ? 1 : 0) +
     (techFilter !== "all" ? 1 : 0) +
-    (amountFilter !== "all" ? 1 : 0);
+    (amountFilter !== "all" ? 1 : 0) +
+    (periodFilter !== "all" ? 1 : 0);
 
   const resetFilters = () => {
     setSearch("");
     setStatusFilter("all");
-    setPeriodFilter("all");
     setClientFilter("all");
     setTechFilter("all");
     setAmountFilter("all");
+    setPeriodFilter("all");
   };
 
   const getStatusBadge = (status: string) => {
@@ -527,7 +620,7 @@ function InterventiPage() {
         );
       case "in corso":
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800">
             <Clock className="size-3" /> In corso
           </span>
         );
@@ -539,20 +632,61 @@ function InterventiPage() {
         );
       default:
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800">
-            <AlertCircle className="size-3" /> Aperto
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800">
+            <Clock className="size-3" /> Aperto
           </span>
         );
     }
   };
 
+  // Se è in corso la compilazione di un intervento, mostriamo l'editor direttamente nella sezione!
+  if (editingIntervention) {
+    const editingClient = allClients.find((c: any) => c.id === editingIntervention.client_id);
+    return (
+      <AppLayout
+        title={`Intervento ${editingIntervention.number}`}
+        description={`Compilazione diretta rapporto di lavoro per ${editingClient?.name || "cliente"}`}
+      >
+        <InterventoInlineEditor
+          value={editingIntervention}
+          onChange={setEditingIntervention}
+          onSave={() => handleSaveIntervention(editingIntervention)}
+          onBack={() => setEditingIntervention(null)}
+          company={company.data ?? DEFAULT_COMPANY}
+          clients={allClients}
+          saving={save.isPending}
+          onDuplicate={() => handleDuplicate(editingIntervention)}
+          onDelete={async () => {
+            if (
+              editingIntervention.id &&
+              confirm(`Eliminare l'intervento ${editingIntervention.number}?`)
+            ) {
+              await remove.mutateAsync(editingIntervention.id);
+              setEditingIntervention(null);
+              toast.success("Intervento eliminato.");
+            }
+          }}
+          onOpenPreviewModal={handleOpenPreviewFromInline}
+        />
+
+        {/* Modal Anteprima PDF aperta dall'editor inline */}
+        <DocPreviewModal
+          open={previewOpen}
+          onOpenChange={setPreviewOpen}
+          company={company.data ?? DEFAULT_COMPANY}
+          data={previewData}
+        />
+      </AppLayout>
+    );
+  }
+
   return (
     <AppLayout
       title="Interventi"
-      description="Rapportini di lavoro, manutenzioni e pronto intervento con riepilogo costi."
+      description="Rapporti di lavoro, manutenzioni e pronto intervento idraulico con PDF in tempo reale."
       actions={
         <Button
-          onClick={openNew}
+          onClick={handleOpenQuickCreate}
           className="bg-primary hover:bg-primary/90 text-primary-foreground font-medium px-2.5 sm:px-4 py-2 shadow-xs rounded-lg gap-1.5 shrink-0"
         >
           <div className="flex items-center gap-1">
@@ -577,15 +711,15 @@ function InterventiPage() {
             }`}
           >
             <div className="flex items-center justify-between text-muted-foreground">
-              <span className="text-xs font-medium">Tutti gli interventi</span>
+              <span className="text-xs font-medium">Totale interventi</span>
               <Wrench className="size-4 text-primary" />
             </div>
             <div>
               <p className="text-xl sm:text-2xl font-bold text-foreground font-mono tabular-nums mt-1">
-                {stats.all}
+                {stats.total}
               </p>
               <p className="text-[11px] sm:text-xs text-muted-foreground/80 mt-0.5 truncate">
-                Totale {formatCurrency(stats.totalValue)}
+                Valore stimato {formatCurrency(stats.totalValue)}
               </p>
             </div>
           </button>
@@ -595,20 +729,20 @@ function InterventiPage() {
             onClick={() => setStatusFilter("aperto")}
             className={`rounded-xl border p-3.5 sm:p-4 text-left transition-all bg-card shadow-xs flex flex-col justify-between min-h-[96px] sm:min-h-[104px] ${
               statusFilter === "aperto"
-                ? "border-blue-500 ring-1 ring-blue-500/20 shadow-xs"
+                ? "border-amber-500 ring-1 ring-amber-500/20 shadow-xs"
                 : "border-border hover:bg-muted/30"
             }`}
           >
-            <div className="flex items-center justify-between text-blue-700 dark:text-blue-400">
-              <span className="text-xs font-medium">Aperti / Da fare</span>
-              <AlertCircle className="size-4" />
+            <div className="flex items-center justify-between text-muted-foreground">
+              <span className="text-xs font-medium">Da eseguire</span>
+              <Clock className="size-4 text-amber-500" />
             </div>
             <div>
-              <p className="text-xl sm:text-2xl font-bold text-foreground font-mono tabular-nums mt-1">
-                {stats.aperto}
+              <p className="text-xl sm:text-2xl font-bold text-amber-600 dark:text-amber-400 font-mono tabular-nums mt-1">
+                {stats.aperti}
               </p>
-              <p className="text-[11px] sm:text-xs text-blue-600/80 mt-0.5 truncate">
-                In attesa di esecuzione
+              <p className="text-[11px] sm:text-xs text-muted-foreground/80 mt-0.5 truncate">
+                Interventi aperti
               </p>
             </div>
           </button>
@@ -618,20 +752,20 @@ function InterventiPage() {
             onClick={() => setStatusFilter("in corso")}
             className={`rounded-xl border p-3.5 sm:p-4 text-left transition-all bg-card shadow-xs flex flex-col justify-between min-h-[96px] sm:min-h-[104px] ${
               statusFilter === "in corso"
-                ? "border-amber-500 ring-1 ring-amber-500/20 shadow-xs"
+                ? "border-blue-500 ring-1 ring-blue-500/20 shadow-xs"
                 : "border-border hover:bg-muted/30"
             }`}
           >
-            <div className="flex items-center justify-between text-amber-700 dark:text-amber-400">
-              <span className="text-xs font-medium">In corso</span>
-              <Clock className="size-4" />
+            <div className="flex items-center justify-between text-muted-foreground">
+              <span className="text-xs font-medium">In lavorazione</span>
+              <Wrench className="size-4 text-blue-500" />
             </div>
             <div>
-              <p className="text-xl sm:text-2xl font-bold text-foreground font-mono tabular-nums mt-1">
-                {stats.in_corso}
+              <p className="text-xl sm:text-2xl font-bold text-blue-600 dark:text-blue-400 font-mono tabular-nums mt-1">
+                {stats.inCorso}
               </p>
-              <p className="text-[11px] sm:text-xs text-amber-600/80 mt-0.5 truncate">
-                Lavorazioni attive
+              <p className="text-[11px] sm:text-xs text-muted-foreground/80 mt-0.5 truncate">
+                In corso sui cantieri
               </p>
             </div>
           </button>
@@ -645,114 +779,142 @@ function InterventiPage() {
                 : "border-border hover:bg-muted/30"
             }`}
           >
-            <div className="flex items-center justify-between text-emerald-700 dark:text-emerald-400">
+            <div className="flex items-center justify-between text-muted-foreground">
               <span className="text-xs font-medium">Completati</span>
-              <CheckCircle2 className="size-4" />
+              <CheckCircle2 className="size-4 text-emerald-500" />
             </div>
             <div>
-              <p className="text-xl sm:text-2xl font-bold text-foreground font-mono tabular-nums mt-1">
-                {stats.completato}
+              <p className="text-xl sm:text-2xl font-bold text-emerald-600 dark:text-emerald-400 font-mono tabular-nums mt-1">
+                {stats.completati}
               </p>
-              <p className="text-[11px] sm:text-xs text-emerald-600/80 mt-0.5 truncate">
+              <p className="text-[11px] sm:text-xs text-muted-foreground/80 mt-0.5 truncate">
                 Pronti per fatturazione
               </p>
             </div>
           </button>
         </div>
 
-        {/* Toolbar con filtri multipli */}
-        <div className="rounded-xl border border-border bg-card p-3 sm:p-4 shadow-xs space-y-3">
-          <div className="flex flex-col md:grid md:grid-cols-12 gap-3">
-            {/* Ricerca per numero, titolo, note, cliente + Toggle filtri mobile */}
-            <div className="flex items-center gap-2 md:col-span-4">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        {/* Card Contenitore Principale con Tabella e Filtri */}
+        <div className="bg-card rounded-xl border border-border shadow-xs overflow-hidden">
+          {/* Barra Superiore: Ricerca e Filtri */}
+          <div className="p-4 border-b border-border space-y-3">
+            <div className="flex flex-col sm:flex-row gap-2.5 sm:items-center justify-between">
+              {/* Ricerca veloce */}
+              <div className="relative flex-1 max-w-md">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
                 <Input
-                  placeholder="Cerca numero, titolo, cliente, note..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="pl-9 bg-background shadow-xs rounded-lg"
+                  placeholder="Cerca intervento, cliente, tecnico o oggetto..."
+                  className="pl-9 h-9 text-xs sm:text-sm bg-background border-border"
                 />
+                {search && (
+                  <button
+                    onClick={() => setSearch("")}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-0.5"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                )}
               </div>
 
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-9 text-xs font-semibold uppercase px-2.5 rounded-lg shadow-xs flex items-center gap-1 cursor-pointer shrink-0"
-                    title="Altre azioni sugli interventi"
-                  >
-                    Altro
-                    <ChevronDown className="size-3.5" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuItem
-                    disabled={selectedIds.length === 0}
-                    onClick={handleDeleteSelected}
-                    className="text-destructive cursor-pointer text-xs"
-                  >
-                    <Trash2 className="mr-2 size-4" />
-                    Elimina selezionati ({selectedIds.length})
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    disabled={selectedIds.length !== 1}
-                    onClick={handleDuplicateSingleSelected}
-                    className="cursor-pointer text-xs"
-                  >
-                    <Copy className="mr-2 size-4" />
-                    Duplica selezionato
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={handleExportCsv} className="cursor-pointer text-xs">
-                    <Download className="mr-2 size-4" />
-                    Esporta elenco (.CSV)
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={toggleSelectAll} className="cursor-pointer text-xs">
-                    {selectedIds.length === filteredRows.length && filteredRows.length > 0
-                      ? "Deseleziona tutti"
-                      : "Seleziona tutti"}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-
-              <Button
-                type="button"
-                variant={showMobileFilters || activeFilterCount > 0 ? "secondary" : "outline"}
-                size="sm"
-                onClick={() => setShowMobileFilters((prev) => !prev)}
-                className="md:hidden shrink-0 h-9 px-3 gap-1.5 rounded-lg border-border"
-              >
-                <SlidersHorizontal className="size-3.5" />
-                <span>Filtri</span>
-                {activeFilterCount > 0 && (
-                  <span className="flex size-4.5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground px-1">
-                    {activeFilterCount}
-                  </span>
-                )}
-                <ChevronDown
-                  className={cn(
-                    "size-3.5 transition-transform duration-200",
-                    showMobileFilters && "rotate-180",
+              {/* Azioni Toolbar */}
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowMobileFilters(!showMobileFilters)}
+                  className="sm:hidden h-9 text-xs gap-1.5"
+                >
+                  <SlidersHorizontal className="size-3.5" />
+                  <span>Filtri</span>
+                  {activeFilterCount > 0 && (
+                    <Badge variant="secondary" className="px-1.5 py-0 text-[10px] h-4">
+                      {activeFilterCount}
+                    </Badge>
                   )}
-                />
-              </Button>
+                </Button>
+
+                <div className="hidden sm:flex items-center gap-2">
+                  {/* Filtro Stato */}
+                  <Select value={statusFilter} onValueChange={setStatusFilter}>
+                    <SelectTrigger className="h-9 text-xs w-[130px] bg-background border-border">
+                      <SelectValue placeholder="Stato" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Tutti gli stati</SelectItem>
+                      <SelectItem value="aperto">Aperto</SelectItem>
+                      <SelectItem value="in corso">In corso</SelectItem>
+                      <SelectItem value="completato">Completato</SelectItem>
+                      <SelectItem value="fatturato">Fatturato</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  {/* Filtro Tecnico */}
+                  <Select value={techFilter} onValueChange={setTechFilter}>
+                    <SelectTrigger className="h-9 text-xs w-[130px] bg-background border-border">
+                      <SelectValue placeholder="Tecnico" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Tutti i tecnici</SelectItem>
+                      {technicians.map((t) => (
+                        <SelectItem key={t} value={t}>
+                          {t}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  {/* Filtro Periodo */}
+                  <Select value={periodFilter} onValueChange={setPeriodFilter}>
+                    <SelectTrigger className="h-9 text-xs w-[130px] bg-background border-border">
+                      <SelectValue placeholder="Periodo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Tutto il periodo</SelectItem>
+                      <SelectItem value="today">Oggi</SelectItem>
+                      <SelectItem value="week">Ultimi 7 giorni</SelectItem>
+                      <SelectItem value="month">Ultimi 30 giorni</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  {/* Filtro Cliente */}
+                  <Select value={clientFilter} onValueChange={setClientFilter}>
+                    <SelectTrigger className="h-9 text-xs w-[140px] bg-background border-border">
+                      <SelectValue placeholder="Cliente" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-60">
+                      <SelectItem value="all">Tutti i clienti</SelectItem>
+                      {allClients.map((c: any) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {hasActiveFilters && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={resetFilters}
+                    className="h-9 text-xs text-muted-foreground hover:text-foreground px-2 gap-1"
+                    title="Azzera filtri"
+                  >
+                    <FilterX className="size-3.5" />
+                    <span className="hidden md:inline">Reset</span>
+                  </Button>
+                )}
+              </div>
             </div>
 
-            {/* Menu a scomparsa filtri su mobile, sempre in linea su desktop */}
-            <div
-              className={cn(
-                "md:col-span-8 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3",
-                showMobileFilters ? "grid" : "hidden md:grid",
-              )}
-            >
-              {/* Filtro 1: Stato */}
-              <div>
+            {/* Filtri collassabili su Mobile */}
+            {showMobileFilters && (
+              <div className="sm:hidden grid grid-cols-2 gap-2 pt-2 border-t border-border/60">
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="bg-background shadow-xs rounded-lg">
-                    <SelectValue placeholder="Tutti gli stati" />
+                  <SelectTrigger className="h-8 text-xs bg-background">
+                    <SelectValue placeholder="Stato" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Tutti gli stati</SelectItem>
@@ -762,32 +924,38 @@ function InterventiPage() {
                     <SelectItem value="fatturato">Fatturato</SelectItem>
                   </SelectContent>
                 </Select>
-              </div>
 
-              {/* Filtro 2: Periodo */}
-              <div>
+                <Select value={techFilter} onValueChange={setTechFilter}>
+                  <SelectTrigger className="h-8 text-xs bg-background">
+                    <SelectValue placeholder="Tecnico" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Tutti i tecnici</SelectItem>
+                    {technicians.map((t) => (
+                      <SelectItem key={t} value={t}>
+                        {t}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
                 <Select value={periodFilter} onValueChange={setPeriodFilter}>
-                  <SelectTrigger className="bg-background shadow-xs rounded-lg">
+                  <SelectTrigger className="h-8 text-xs bg-background">
                     <SelectValue placeholder="Periodo" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Tutte le date</SelectItem>
+                    <SelectItem value="all">Tutto il periodo</SelectItem>
                     <SelectItem value="today">Oggi</SelectItem>
-                    <SelectItem value="this_week">Questa settimana</SelectItem>
-                    <SelectItem value="this_month">Questo mese</SelectItem>
-                    <SelectItem value="last_3_months">Ultimi 3 mesi</SelectItem>
-                    <SelectItem value="this_year">Anno in corso</SelectItem>
+                    <SelectItem value="week">Ultimi 7 giorni</SelectItem>
+                    <SelectItem value="month">Ultimi 30 giorni</SelectItem>
                   </SelectContent>
                 </Select>
-              </div>
 
-              {/* Filtro 3: Cliente */}
-              <div>
                 <Select value={clientFilter} onValueChange={setClientFilter}>
-                  <SelectTrigger className="bg-background shadow-xs rounded-lg">
+                  <SelectTrigger className="h-8 text-xs bg-background">
                     <SelectValue placeholder="Cliente" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="max-h-60">
                     <SelectItem value="all">Tutti i clienti</SelectItem>
                     {allClients.map((c: any) => (
                       <SelectItem key={c.id} value={c.id}>
@@ -797,232 +965,213 @@ function InterventiPage() {
                   </SelectContent>
                 </Select>
               </div>
+            )}
 
-              {/* Filtro 4: Importo */}
-              <div>
-                <Select value={amountFilter} onValueChange={setAmountFilter}>
-                  <SelectTrigger className="bg-background shadow-xs rounded-lg">
-                    <SelectValue placeholder="Importo" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Tutti gli importi</SelectItem>
-                    <SelectItem value="under_100">Fino a 100 €</SelectItem>
-                    <SelectItem value="100_300">100 € – 300 €</SelectItem>
-                    <SelectItem value="over_300">Oltre 300 €</SelectItem>
-                  </SelectContent>
-                </Select>
+            {/* Barra Azioni Multiple */}
+            {selectedIds.length > 0 && (
+              <div className="flex items-center justify-between p-2.5 rounded-lg bg-primary/10 border border-primary/20 text-xs">
+                <span className="font-medium text-foreground">
+                  {selectedIds.length}{" "}
+                  {selectedIds.length === 1 ? "intervento selezionato" : "interventi selezionati"}
+                </span>
+                <div className="flex items-center gap-2">
+                  {selectedIds.length === 1 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleDuplicateSingleSelected}
+                      className="h-7 text-xs gap-1 bg-background"
+                    >
+                      <Copy className="size-3" />
+                      <span>Duplica</span>
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleExportCsv}
+                    className="h-7 text-xs gap-1 bg-background"
+                  >
+                    <Download className="size-3" />
+                    <span>Esporta CSV</span>
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={handleDeleteSelected}
+                    className="h-7 text-xs gap-1"
+                  >
+                    <Trash2 className="size-3" />
+                    <span>Elimina ({selectedIds.length})</span>
+                  </Button>
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
-          {/* Reset Filtri Bar */}
-          {hasActiveFilters && (
-            <div className="flex items-center justify-between pt-2 border-t border-border/60 text-xs">
-              <span className="text-muted-foreground">
-                Trovati <strong className="text-foreground">{filteredRows.length}</strong>{" "}
-                interventi su {allInterventions.length}
-              </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={resetFilters}
-                className="h-7 text-xs text-muted-foreground hover:text-foreground gap-1.5"
-              >
-                <FilterX className="size-3.5" /> Azzera filtri
-              </Button>
-            </div>
-          )}
-        </div>
-
-        {/* Modalità Lista / Tabella Interventi con Checkbox e Anteprima PDF */}
-        <div className="rounded-xl border border-border bg-card shadow-xs overflow-hidden">
+          {/* Tabella Interventi */}
           <Table>
             <TableHeader className="bg-muted/40">
-              <TableRow className="hover:bg-transparent border-b border-border">
-                <TableHead className="w-12 pl-4">
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="w-10 text-center">
                   <Checkbox
-                    checked={filteredRows.length > 0 && selectedIds.length === filteredRows.length}
+                    checked={selectedIds.length === filteredRows.length && filteredRows.length > 0}
                     onCheckedChange={toggleSelectAll}
                     aria-label="Seleziona tutti"
                   />
                 </TableHead>
-                <TableHead className="font-semibold text-foreground py-3">Numero</TableHead>
-                <TableHead className="font-semibold text-foreground py-3">Cliente</TableHead>
-                <TableHead className="font-semibold text-foreground py-3">
-                  Descrizione / Lavorazione
-                </TableHead>
-                <TableHead className="font-semibold text-foreground py-3">Data</TableHead>
-                <TableHead className="font-semibold text-foreground py-3 text-right">
-                  Totale
-                </TableHead>
-                <TableHead className="font-semibold text-foreground py-3 text-center">
-                  Stato
-                </TableHead>
-                <TableHead className="font-semibold text-foreground py-3 pr-4 text-right">
-                  Azioni
-                </TableHead>
+                <TableHead className="w-[110px]">Numero</TableHead>
+                <TableHead className="w-[100px]">Data</TableHead>
+                <TableHead>Cliente & Lavori</TableHead>
+                <TableHead className="w-[120px]">Tecnico</TableHead>
+                <TableHead className="w-[110px] text-right">Totale</TableHead>
+                <TableHead className="w-[130px]">Stato</TableHead>
+                <TableHead className="w-[150px] text-right">Azioni</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredRows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="h-40 text-center text-sm text-muted-foreground">
-                    {hasActiveFilters ? (
-                      <div className="flex flex-col items-center justify-center gap-2">
-                        <p>Nessun intervento corrisponde ai filtri impostati.</p>
-                        <Button variant="outline" size="sm" onClick={resetFilters}>
-                          Reimposta filtri
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col items-center justify-center gap-2">
-                        <Wrench className="size-8 text-muted-foreground/40" />
-                        <p>Nessun intervento registrato. Crea il primo rapportino di lavoro.</p>
-                        <Button size="sm" onClick={openNew}>
-                          <Plus className="mr-1.5 size-4" /> Nuovo intervento
-                        </Button>
-                      </div>
-                    )}
+                  <TableCell colSpan={8} className="text-center py-12 text-muted-foreground">
+                    <Wrench className="size-8 mx-auto mb-2 opacity-40" />
+                    <p className="font-medium">Nessun intervento trovato</p>
+                    <p className="text-xs mt-0.5">
+                      {hasActiveFilters
+                        ? "Prova a modificare i filtri applicati."
+                        : "Crea il tuo primo rapporto cliccando su 'Nuovo intervento'."}
+                    </p>
                   </TableCell>
                 </TableRow>
               ) : (
                 filteredRows.map((row: any) => {
                   const client = allClients.find((c: any) => c.id === row.client_id);
-                  const total = calculateTotal(row);
                   const isSelected = selectedIds.includes(row.id);
+                  const tot = calculateTotal(row);
 
                   return (
                     <TableRow
                       key={row.id}
-                      className={`hover:bg-muted/40 transition-colors border-b border-border/60 ${
-                        isSelected ? "bg-muted/50" : ""
-                      }`}
+                      className={cn(
+                        "group hover:bg-muted/30 transition-colors cursor-pointer",
+                        isSelected && "bg-primary/5",
+                      )}
+                      onClick={(e) => {
+                        if ((e.target as HTMLElement).closest("button, input, [role=checkbox], a"))
+                          return;
+                        handleOpenEditInline(row);
+                      }}
                     >
-                      {/* Checkbox selezione riga */}
-                      <TableCell className="w-12 pl-4 py-3.5">
+                      <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
                         <Checkbox
                           checked={isSelected}
-                          onCheckedChange={() => toggleSelectOne(row.id)}
-                          aria-label={`Seleziona intervento ${row.number}`}
+                          onCheckedChange={() => toggleSelectRow(row.id)}
+                          aria-label={`Seleziona ${row.number}`}
                         />
                       </TableCell>
 
-                      {/* Numero */}
-                      <TableCell className="py-3.5">
-                        <button
-                          type="button"
-                          onClick={() => handleOpenEdit(row)}
-                          className="flex items-center gap-2 font-semibold text-foreground hover:text-primary transition-colors text-left cursor-pointer"
-                        >
-                          <Wrench className="size-4 text-primary shrink-0" />
-                          <span>{row.number || "INT"}</span>
-                        </button>
+                      <TableCell className="font-mono font-semibold text-foreground text-xs sm:text-sm">
+                        {row.number}
                       </TableCell>
 
-                      {/* Cliente */}
-                      <TableCell className="py-3.5">
-                        <div className="min-w-0">
-                          <p className="font-medium text-foreground truncate">
-                            {client?.name ?? "Senza cliente"}
-                          </p>
-                          {row.cantiere ? (
-                            <p className="text-xs text-muted-foreground truncate mt-0.5">
-                              {row.cantiere}
-                            </p>
-                          ) : null}
-                          {client?.city || client?.phone ? (
-                            <p className="text-xs text-muted-foreground truncate">
-                              {[client?.city, client?.phone].filter(Boolean).join(" · ")}
-                            </p>
-                          ) : null}
+                      <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                        {formatDate(row.date)}
+                      </TableCell>
+
+                      <TableCell>
+                        <div className="font-medium text-foreground text-xs sm:text-sm flex items-center gap-1.5">
+                          <span>{client?.name ?? "Cliente non specificato"}</span>
+                          {client?.city && (
+                            <span className="text-muted-foreground text-[11px] font-normal">
+                              ({client.city})
+                            </span>
+                          )}
                         </div>
+                        {(row.title || row.description) && (
+                          <div className="text-xs text-muted-foreground truncate max-w-xs sm:max-w-md">
+                            {row.title || row.description}
+                          </div>
+                        )}
                       </TableCell>
 
-                      {/* Descrizione / Lavorazione */}
-                      <TableCell className="py-3.5">
-                        <div className="min-w-0 max-w-md">
-                          <button
-                            type="button"
-                            onClick={() => handleOpenEdit(row)}
-                            className="font-medium text-foreground hover:text-primary transition-colors text-left truncate block cursor-pointer"
-                          >
-                            {row.title || row.description || "Intervento senza titolo"}
-                          </button>
-                          {row.technician ? (
-                            <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-                              <User className="size-3" /> Tecnico: {row.technician}
-                            </p>
-                          ) : null}
-                        </div>
+                      <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                        {row.technician || "—"}
                       </TableCell>
 
-                      {/* Data */}
-                      <TableCell className="py-3.5 text-sm text-muted-foreground whitespace-nowrap">
-                        <span className="flex items-center gap-1.5">
-                          <Calendar className="size-3.5 text-muted-foreground/60" />
-                          {formatDate(row.date)}
-                        </span>
+                      <TableCell className="text-right font-mono font-semibold text-foreground text-xs sm:text-sm whitespace-nowrap">
+                        {formatCurrency(tot)}
                       </TableCell>
 
-                      {/* Importo Totale */}
-                      <TableCell className="py-3.5 text-right whitespace-nowrap">
-                        <p className="font-bold text-foreground text-sm">{formatCurrency(total)}</p>
-                        <p className="text-[10px] text-muted-foreground">IVA inc.</p>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              type="button"
+                              className="focus:outline-none cursor-pointer flex items-center gap-1"
+                            >
+                              {getStatusBadge(row.status)}
+                              <ChevronDown className="size-3 text-muted-foreground opacity-60" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start">
+                            <DropdownMenuItem
+                              onClick={() => handleQuickStatusChange(row, "aperto")}
+                            >
+                              Aperto
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleQuickStatusChange(row, "in corso")}
+                            >
+                              In corso
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleQuickStatusChange(row, "completato")}
+                            >
+                              Completato
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleQuickStatusChange(row, "fatturato")}
+                            >
+                              Fatturato
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </TableCell>
 
-                      {/* Stato con Cambio Rapido */}
-                      <TableCell className="py-3.5 text-center">
-                        <Select
-                          value={row.status || "aperto"}
-                          onValueChange={(val) => handleQuickStatusChange(row, val)}
-                        >
-                          <SelectTrigger className="h-7 w-auto border-0 shadow-none bg-transparent hover:bg-muted/40 p-0 focus:ring-0">
-                            {getStatusBadge(row.status || "aperto")}
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="aperto">Aperto</SelectItem>
-                            <SelectItem value="in corso">In corso</SelectItem>
-                            <SelectItem value="completato">Completato</SelectItem>
-                            <SelectItem value="fatturato">Fatturato</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
-
-                      {/* Azioni sulla riga con Tasto Anteprima PDF */}
-                      <TableCell className="py-3.5 pr-4 text-right">
+                      <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1">
-                          {/* TASTO ANTEPRIMA PDF DIRETTO */}
+                          {/* Modifica Inline */}
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => handleOpenEditInline(row)}
+                            className="size-8 text-primary hover:text-primary hover:bg-primary/10 cursor-pointer"
+                            title="Compila / Modifica rapporto"
+                          >
+                            <Pencil className="size-4" />
+                          </Button>
+
+                          {/* Anteprima PDF */}
                           <Button
                             type="button"
                             size="icon"
                             variant="ghost"
                             onClick={() => handleOpenPreview(row)}
-                            className="size-8 text-primary hover:bg-primary/15 transition-colors cursor-pointer"
-                            title="Visualizza anteprima PDF"
+                            className="size-8 text-muted-foreground hover:text-foreground cursor-pointer"
+                            title="Anteprima PDF"
                           >
                             <Eye className="size-4" />
                           </Button>
 
-                          {/* TASTO WHATSAPP */}
-                          {client?.phone ? (
+                          {/* WhatsApp */}
+                          {client?.phone && (
                             <Button
                               type="button"
                               size="icon"
                               variant="ghost"
                               onClick={() => openWhatsApp(client.phone, client.name, row)}
-                              className="size-8 text-[#25D366] hover:bg-[#25D366]/15 hover:text-[#20BA5A] transition-colors cursor-pointer"
-                              title="Contatta cliente su WhatsApp"
-                            >
-                              <WhatsAppIcon className="size-4" />
-                            </Button>
-                          ) : (
-                            <Button
-                              type="button"
-                              size="icon"
-                              variant="ghost"
-                              disabled
-                              className="size-8 opacity-25 cursor-not-allowed"
-                              title="Nessun numero cliente per WhatsApp"
+                              className="size-8 text-[#25D366] hover:bg-[#25D366]/10 cursor-pointer"
+                              title="Invia tramite WhatsApp"
                             >
                               <WhatsAppIcon className="size-4" />
                             </Button>
@@ -1035,21 +1184,9 @@ function InterventiPage() {
                             variant="ghost"
                             onClick={() => handleDuplicate(row)}
                             className="size-8 text-muted-foreground hover:text-foreground cursor-pointer"
-                            title="Duplica intervento"
+                            title="Duplica"
                           >
                             <Copy className="size-4" />
-                          </Button>
-
-                          {/* Modifica */}
-                          <Button
-                            type="button"
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => handleOpenEdit(row)}
-                            className="size-8 text-muted-foreground hover:text-foreground cursor-pointer"
-                            title="Modifica intervento"
-                          >
-                            <Pencil className="size-4" />
                           </Button>
 
                           {/* Elimina */}
@@ -1058,7 +1195,7 @@ function InterventiPage() {
                             size="icon"
                             variant="ghost"
                             onClick={() => {
-                              if (confirm(`Eliminare il rapportino ${row.number || ""}?`)) {
+                              if (confirm(`Eliminare l'intervento ${row.number}?`)) {
                                 remove.mutate(row.id);
                               }
                             }}
@@ -1100,39 +1237,15 @@ function InterventiPage() {
       </div>
 
       {/* Creazione Rapida Intervento */}
-      <DocCreateModal
-        open={createModalOpen}
-        onOpenChange={setCreateModalOpen}
-        docType="intervento"
-        docLabel="Intervento"
+      <InterventoQuickCreateModal
+        open={quickCreateOpen}
+        onOpenChange={setQuickCreateOpen}
         clients={allClients}
-        company={{
-          ...company.data,
-          default_vat_rate: Number(company.data?.default_vat_rate ?? 22),
-          default_template: (company.data?.default_template as DocTemplate) ?? "classico",
-        }}
-        onConfirm={handleConfirmCreate}
+        company={company.data ?? DEFAULT_COMPANY}
+        onConfirm={handleQuickCreateConfirm}
       />
 
-      {/* Editor Documento */}
-      {form ? (
-        <DocumentEditor
-          open={open}
-          onOpenChange={setOpen}
-          docLabel="Rapporto di intervento"
-          secondaryDateLabel="Data chiusura"
-          statuses={STATUSES as unknown as string[]}
-          withBody
-          company={company.data ?? DEFAULT_COMPANY}
-          clients={allClients}
-          value={form}
-          onChange={setForm}
-          onSave={submit}
-          saving={save.isPending}
-        />
-      ) : null}
-
-      {/* Modal Anteprima PDF aperta dal pulsante dedicato */}
+      {/* Modal Anteprima PDF */}
       <DocPreviewModal
         open={previewOpen}
         onOpenChange={setPreviewOpen}

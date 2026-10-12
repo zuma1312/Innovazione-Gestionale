@@ -20,6 +20,7 @@ export type CompanyInfo = {
   email: string;
   vat_number: string;
   iban: string;
+  logo_url?: string;
 };
 
 export const emptyItem = (): DocItem => ({ description: "", qty: 1, unit_price: 0 });

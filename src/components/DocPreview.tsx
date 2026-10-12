@@ -15,6 +15,8 @@ export type DocPreviewProps = {
   items: DocItem[];
   vatRate: number;
   notes?: string;
+  exclusions?: string;
+  paymentConditions?: string;
   bodyText?: string;
   title?: string;
   cantiere?: string;
@@ -43,6 +45,8 @@ export const DocPreview = forwardRef<HTMLDivElement, DocPreviewProps>(
       items,
       vatRate,
       notes,
+      exclusions,
+      paymentConditions,
       bodyText,
       title,
       cantiere,
@@ -56,6 +60,19 @@ export const DocPreview = forwardRef<HTMLDivElement, DocPreviewProps>(
       if (template === "minimal") {
         return (
           <div style={{ borderBottom: `2px solid ${DEEP}`, paddingBottom: 14, marginBottom: 22 }}>
+            {company.logo_url ? (
+              <img
+                src={company.logo_url}
+                alt={company.company_name}
+                style={{
+                  maxHeight: 48,
+                  maxWidth: 180,
+                  objectFit: "contain",
+                  marginBottom: 8,
+                  display: "block",
+                }}
+              />
+            ) : null}
             <div style={{ fontSize: 20, fontWeight: 700, letterSpacing: 1, color: DEEP }}>
               {company.company_name}
             </div>
@@ -82,6 +99,28 @@ export const DocPreview = forwardRef<HTMLDivElement, DocPreviewProps>(
             }}
           >
             <div>
+              {company.logo_url ? (
+                <div
+                  style={{
+                    marginBottom: 10,
+                    background: "rgba(255, 255, 255, 0.95)",
+                    padding: "6px 12px",
+                    borderRadius: 8,
+                    display: "inline-block",
+                  }}
+                >
+                  <img
+                    src={company.logo_url}
+                    alt={company.company_name}
+                    style={{
+                      maxHeight: 44,
+                      maxWidth: 170,
+                      objectFit: "contain",
+                      display: "block",
+                    }}
+                  />
+                </div>
+              ) : null}
               <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: 0.5 }}>
                 {company.company_name}
               </div>
@@ -117,6 +156,19 @@ export const DocPreview = forwardRef<HTMLDivElement, DocPreviewProps>(
           }}
         >
           <div>
+            {company.logo_url ? (
+              <img
+                src={company.logo_url}
+                alt={company.company_name}
+                style={{
+                  maxHeight: 52,
+                  maxWidth: 190,
+                  objectFit: "contain",
+                  marginBottom: 8,
+                  display: "block",
+                }}
+              />
+            ) : null}
             <div style={{ fontSize: 19, fontWeight: 800, color: DEEP }}>{company.company_name}</div>
             <div style={{ fontSize: 10, color: GREY, marginTop: 6, lineHeight: 1.7 }}>
               {company.address}
@@ -184,8 +236,8 @@ export const DocPreview = forwardRef<HTMLDivElement, DocPreviewProps>(
             </div>
             <div style={{ fontSize: 13, fontWeight: 700, marginTop: 6 }}>{clientName || "—"}</div>
             <div style={{ fontSize: 11, color: GREY, lineHeight: 1.7 }}>
-              {clientLines.filter(Boolean).map((l) => (
-                <div key={l}>{l}</div>
+              {clientLines.filter(Boolean).map((l, idx) => (
+                <div key={`${idx}-${l}`}>{l}</div>
               ))}
             </div>
           </div>
@@ -316,9 +368,27 @@ export const DocPreview = forwardRef<HTMLDivElement, DocPreviewProps>(
           </div>
         </div>
 
+        {/* Condizioni di Pagamento distinte */}
+        {(paymentMethod || paymentConditions) && (
+          <div style={{ marginTop: 20, fontSize: 11, color: GREY }}>
+            <strong style={{ color: DEEP }}>Condizioni di Pagamento:</strong>{" "}
+            {paymentMethod ? `${paymentMethod}` : ""}
+            {paymentIban ? ` (IBAN: ${paymentIban})` : ""}
+            {paymentConditions ? ` — ${paymentConditions}` : ""}
+          </div>
+        )}
+
+        {/* Note per il cliente */}
         {notes ? (
-          <div style={{ marginTop: 26, fontSize: 11, color: GREY, whiteSpace: "pre-wrap" }}>
+          <div style={{ marginTop: 12, fontSize: 11, color: GREY, whiteSpace: "pre-wrap" }}>
             <strong style={{ color: DEEP }}>Note:</strong> {notes}
+          </div>
+        ) : null}
+
+        {/* Esclusioni distinte */}
+        {exclusions ? (
+          <div style={{ marginTop: 12, fontSize: 11, color: GREY, whiteSpace: "pre-wrap" }}>
+            <strong style={{ color: DEEP }}>Esclusioni:</strong> {exclusions}
           </div>
         ) : null}
 

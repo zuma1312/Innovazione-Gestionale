@@ -19,6 +19,8 @@ export type DocPreviewData = {
   items: DocItem[];
   vatRate: number;
   notes?: string;
+  exclusions?: string;
+  paymentConditions?: string;
   bodyText?: string;
   title?: string;
   cantiere?: string;
@@ -159,6 +161,8 @@ export function DocPreviewModal({ open, onOpenChange, data, company }: Props) {
               items={data.items}
               vatRate={data.vatRate}
               notes={data.notes}
+              exclusions={data.exclusions}
+              paymentConditions={data.paymentConditions}
               bodyText={data.bodyText}
               title={data.title}
               cantiere={data.cantiere}

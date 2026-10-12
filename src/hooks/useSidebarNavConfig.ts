@@ -51,20 +51,20 @@ export const DEFAULT_NAV_CONFIG: NavItemConfig[] = [
     description: "Panoramica attività e indicatori",
   },
   {
-    id: "clienti",
-    to: "/clienti",
-    label: "Clienti",
-    iconName: "Users",
-    visible: true,
-    description: "Anagrafica clienti e contatti",
-  },
-  {
     id: "agenda",
     to: "/agenda",
     label: "Agenda",
     iconName: "CalendarDays",
     visible: true,
     description: "Calendario e pianificazione appuntamenti",
+  },
+  {
+    id: "clienti",
+    to: "/clienti",
+    label: "Clienti",
+    iconName: "Users",
+    visible: true,
+    description: "Anagrafica clienti e contatti",
   },
   {
     id: "interventi",
@@ -108,13 +108,36 @@ export const DEFAULT_NAV_CONFIG: NavItemConfig[] = [
   },
 ];
 
-const STORAGE_KEY = "innovazione_termica_sidebar_nav_v1";
+const STORAGE_KEY = "artigiano_smart_sidebar_nav_v3";
 const EVENT_NAME = "sidebar-nav-updated";
 
 function loadConfig(): NavItemConfig[] {
   if (typeof window === "undefined") return DEFAULT_NAV_CONFIG;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    let raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      // Controlla e migra eventuale vecchia chiave
+      const legacyRaw = localStorage.getItem("innovazione_termica_sidebar_nav_v1");
+      if (legacyRaw) {
+        try {
+          const parsedLegacy = JSON.parse(legacyRaw) as Partial<NavItemConfig>[];
+          if (Array.isArray(parsedLegacy) && parsedLegacy.length > 0) {
+            // Se Clienti era prima di Agenda, invertili
+            const clientiIdx = parsedLegacy.findIndex((p) => p.id === "clienti");
+            const agendaIdx = parsedLegacy.findIndex((p) => p.id === "agenda");
+            if (clientiIdx !== -1 && agendaIdx !== -1 && clientiIdx < agendaIdx) {
+              const temp = parsedLegacy[clientiIdx];
+              parsedLegacy[clientiIdx] = parsedLegacy[agendaIdx];
+              parsedLegacy[agendaIdx] = temp;
+            }
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(parsedLegacy));
+            raw = JSON.stringify(parsedLegacy);
+          }
+        } catch {
+          // fallback su default
+        }
+      }
+    }
     if (!raw) return DEFAULT_NAV_CONFIG;
     const parsed = JSON.parse(raw) as Partial<NavItemConfig>[];
     if (!Array.isArray(parsed) || parsed.length === 0) return DEFAULT_NAV_CONFIG;
@@ -161,9 +184,12 @@ export function saveConfig(items: NavItemConfig[]) {
 }
 
 export function useSidebarNavConfig() {
-  const [items, setItems] = useState<NavItemConfig[]>(loadConfig);
+  const [items, setItems] = useState<NavItemConfig[]>(DEFAULT_NAV_CONFIG);
 
   useEffect(() => {
+    // Hydrate saved preferences from localStorage on client only to prevent SSR hydration mismatch
+    setItems(loadConfig());
+
     const handleUpdate = () => {
       setItems(loadConfig());
     };

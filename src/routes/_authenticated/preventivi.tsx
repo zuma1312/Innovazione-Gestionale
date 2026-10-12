@@ -49,9 +49,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { DocumentEditor, type DocFormValue } from "@/components/DocumentEditor";
+import type { DocFormValue } from "@/components/DocumentEditor";
 import { DocPreviewModal, type DocPreviewData } from "@/components/DocPreviewModal";
-import { DocCreateModal, type DocCreateInitialData } from "@/components/DocCreateModal";
+import {
+  QuoteQuickCreateModal,
+  type QuoteQuickInitialData,
+} from "@/components/preventivi/QuoteQuickCreateModal";
+import { QuoteInlineEditor } from "@/components/preventivi/QuoteInlineEditor";
 import { DEFAULT_COMPANY, useCompany, useList, useRemove, useSave } from "@/hooks/data";
 import { usePaymentMethods } from "@/hooks/usePaymentMethods";
 import { docTotals, emptyItem, formatCurrency, formatDate, nextNumber } from "@/lib/doc";
@@ -94,16 +98,18 @@ function PreventiviPage() {
   const save = useSave("quotes");
   const remove = useRemove("quotes");
 
-  const [open, setOpen] = useState(false);
-  const [form, setForm] = useState<DocFormValue | null>(null);
-  const [createModalOpen, setCreateModalOpen] = useState(false);
+  // Preventivo correntemente in compilazione diretta inline (senza scheda/modale esterna)
+  const [editingQuote, setEditingQuote] = useState<DocFormValue | null>(null);
 
-  // Selezione multipla (stile screenshot Easyfatt)
+  // Scheda apertura rapida con poche informazioni per creare il preventivo
+  const [quickCreateOpen, setQuickCreateOpen] = useState(false);
+
+  // Selezione multipla tabella
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [previewData, setPreviewData] = useState<DocPreviewData | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
 
-  // Filtri
+  // Filtri elenco
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [periodFilter, setPeriodFilter] = useState<string>("all");
@@ -118,60 +124,104 @@ function PreventiviPage() {
   const prefix = company.data?.quote_prefix || "PRV";
   const defaultNotes = company.data?.quote_default_notes || "";
 
-  const openNew = () => {
+  // Apertura scheda rapida con poche informazioni essenziali
+  const handleOpenQuickCreate = () => {
+    setQuickCreateOpen(true);
+  };
+
+  // Conferma scheda apertura: crea il preventivo e lo apre direttamente nella sezione preventivi
+  const handleQuickCreateConfirm = async (data: QuoteQuickInitialData) => {
+    setQuickCreateOpen(false);
     const existingNumbers = (quotes.data ?? []).map((q: any) => q.number);
-    setForm({
-      client_id: null,
-      number: nextNumber(prefix, existingNumbers),
-      date: todayStr,
-      secondary_date: null,
+    const number = nextNumber(prefix, existingNumbers);
+
+    const newQuote: DocFormValue = {
+      client_id: data.client_id,
+      number,
+      date: data.date,
+      secondary_date: data.valid_until,
       items: [emptyItem()],
       vat_rate: Number(company.data?.default_vat_rate || 22),
       notes: defaultNotes,
       status: "bozza",
       template: (company.data?.default_template as DocTemplate) || "classico",
-      title: "",
-      cantiere: "",
+      title: data.title,
+      cantiere: data.cantiere,
       payment_method_id: defaultMethod?.id,
       payment_method: defaultMethod?.typeLabel,
       payment_iban: defaultMethod?.iban ?? "",
-    });
-    setOpen(true);
+    };
+
+    // Creazione e salvataggio immediato per avere l'id
+    try {
+      const res = await save.mutateAsync({
+        client_id: newQuote.client_id,
+        number: newQuote.number,
+        date: newQuote.date,
+        valid_until: newQuote.secondary_date,
+        items: newQuote.items,
+        vat_rate: newQuote.vat_rate,
+        notes: newQuote.notes,
+        status: newQuote.status,
+        template: newQuote.template,
+        title: newQuote.title,
+        cantiere: newQuote.cantiere,
+        payment_method_id: newQuote.payment_method_id,
+        payment_method: newQuote.payment_method,
+        payment_iban: newQuote.payment_iban,
+        total: 0,
+      });
+
+      setEditingQuote({
+        ...newQuote,
+        id: (res as any)?.id,
+      });
+      toast.success(`Preventivo ${number} creato. Ora puoi compilarlo direttamente qui.`);
+    } catch {
+      setEditingQuote(newQuote);
+      toast.info(`Preventivo ${number} inizializzato.`);
+    }
   };
 
-  const handleConfirmCreate = (data: DocCreateInitialData) => {
-    setCreateModalOpen(false);
-    const existingNumbers = (quotes.data ?? []).map((q: any) => q.number);
-
-    setForm({
-      client_id: data.client_id,
-      number: nextNumber(prefix, existingNumbers),
-      date: data.date,
-      secondary_date: data.secondary_date,
-      items: [emptyItem()],
-      vat_rate: data.vat_rate,
-      notes: data.notes || defaultNotes,
-      status: "bozza",
-      template: data.template,
-      title: data.title,
-      cantiere: data.cantiere,
-      payment_method_id: data.payment_method_id,
-      payment_method: data.payment_method,
-      payment_iban: data.payment_iban,
-    });
-    setOpen(true);
-  };
-
-  const handleDuplicate = (q: any) => {
-    const existingNumbers = (quotes.data ?? []).map((item: any) => item.number);
-    setForm({
+  // Apertura modifica direttamente nella sezione
+  const handleOpenEdit = (q: any) => {
+    setEditingQuote({
+      id: q.id,
       client_id: q.client_id,
-      number: nextNumber(prefix, existingNumbers),
+      number: q.number,
+      date: q.date,
+      secondary_date: q.valid_until,
+      items: (q.items && q.items.length > 0 ? q.items : [emptyItem()]) as any,
+      vat_rate: Number(q.vat_rate || company.data?.default_vat_rate || 22),
+      notes: q.notes || "",
+      body: q.body || "",
+      exclusions: q.exclusions || "",
+      payment_conditions: q.payment_conditions || "",
+      status: q.status || "bozza",
+      template: (q.template as DocTemplate) || "classico",
+      title: q.title || "",
+      cantiere: q.cantiere || "",
+      payment_method_id: q.payment_method_id,
+      payment_method: q.payment_method,
+      payment_iban: q.payment_iban,
+    });
+  };
+
+  // Duplicazione preventivo
+  const handleDuplicate = async (q: any) => {
+    const existingNumbers = (quotes.data ?? []).map((item: any) => item.number);
+    const newNumber = nextNumber(prefix, existingNumbers);
+    const duplicatedQuote: DocFormValue = {
+      client_id: q.client_id,
+      number: newNumber,
       date: todayStr,
-      secondary_date: q.valid_until || null,
+      secondary_date: q.valid_until || q.secondary_date || null,
       items: (q.items ?? []).map((i: any) => ({ ...i })),
       vat_rate: Number(q.vat_rate || 22),
       notes: q.notes || "",
+      body: q.body || "",
+      exclusions: q.exclusions || "",
+      payment_conditions: q.payment_conditions || "",
       status: "bozza",
       template: (q.template as DocTemplate) || "classico",
       title: q.title ? `${q.title} (Copia)` : "",
@@ -179,30 +229,74 @@ function PreventiviPage() {
       payment_method_id: q.payment_method_id || defaultMethod?.id,
       payment_method: q.payment_method || defaultMethod?.typeLabel,
       payment_iban: q.payment_iban ?? defaultMethod?.iban ?? "",
-    });
-    setOpen(true);
-    toast.info("Preventivo duplicato in una nuova bozza.");
+    };
+
+    try {
+      const res = await save.mutateAsync({
+        client_id: duplicatedQuote.client_id,
+        number: duplicatedQuote.number,
+        date: duplicatedQuote.date,
+        valid_until: duplicatedQuote.secondary_date,
+        items: duplicatedQuote.items,
+        vat_rate: duplicatedQuote.vat_rate,
+        notes: duplicatedQuote.notes,
+        body: duplicatedQuote.body,
+        exclusions: duplicatedQuote.exclusions,
+        payment_conditions: duplicatedQuote.payment_conditions,
+        status: duplicatedQuote.status,
+        template: duplicatedQuote.template,
+        title: duplicatedQuote.title,
+        cantiere: duplicatedQuote.cantiere,
+        payment_method_id: duplicatedQuote.payment_method_id,
+        payment_method: duplicatedQuote.payment_method,
+        payment_iban: duplicatedQuote.payment_iban,
+        total: docTotals(duplicatedQuote.items, duplicatedQuote.vat_rate).total,
+      });
+      setEditingQuote({
+        ...duplicatedQuote,
+        id: (res as any)?.id,
+      });
+      toast.success(`Preventivo duplicato nel nuovo numero ${newNumber}.`);
+    } catch {
+      setEditingQuote(duplicatedQuote);
+      toast.info("Preventivo duplicato in bozza.");
+    }
   };
 
-  const handleOpenEdit = (q: any) => {
-    setForm({
-      id: q.id,
-      client_id: q.client_id,
-      number: q.number,
-      date: q.date,
-      secondary_date: q.valid_until,
-      items: (q.items ?? []) as any,
-      vat_rate: Number(q.vat_rate),
-      notes: q.notes,
-      status: q.status,
-      template: q.template as DocTemplate,
-      title: q.title || "",
-      cantiere: q.cantiere || "",
-      payment_method_id: q.payment_method_id,
-      payment_method: q.payment_method,
-      payment_iban: q.payment_iban,
-    });
-    setOpen(true);
+  // Salvataggio del preventivo compilato direttamente
+  const handleSaveQuote = async (target?: DocFormValue) => {
+    const q = target || editingQuote;
+    if (!q) return;
+    try {
+      const savedRes = await save.mutateAsync({
+        id: q.id,
+        client_id: q.client_id,
+        number: q.number,
+        date: q.date,
+        valid_until: q.secondary_date,
+        items: q.items,
+        vat_rate: q.vat_rate,
+        notes: q.notes,
+        body: q.body,
+        exclusions: q.exclusions,
+        payment_conditions: q.payment_conditions,
+        status: q.status,
+        template: q.template,
+        title: q.title,
+        cantiere: q.cantiere,
+        payment_method_id: q.payment_method_id,
+        payment_method: q.payment_method,
+        payment_iban: q.payment_iban,
+        total: docTotals(q.items, q.vat_rate).total,
+      });
+
+      if (!q.id && (savedRes as any)?.id) {
+        setEditingQuote({ ...q, id: (savedRes as any).id });
+      }
+      toast.success("Preventivo salvato con successo.");
+    } catch {
+      toast.error("Salvataggio non riuscito.");
+    }
   };
 
   const handleOpenPreview = (q: any) => {
@@ -212,18 +306,21 @@ function PreventiviPage() {
       number: q.number,
       date: q.date,
       secondaryDateLabel: "Valido fino al",
-      secondaryDate: q.valid_until,
+      secondaryDate: q.secondary_date || q.valid_until,
       template: (q.template as DocTemplate) || "classico",
       clientName: client?.name ?? "Cliente",
       clientLines: [
         client?.address ?? "",
         [client?.zip, client?.city].filter(Boolean).join(" "),
-        client?.vat_number ? `P.IVA ${client.vat_number}` : "",
+        client?.vat_number ? `P.IVA/CF ${client.vat_number}` : "",
         client?.email ?? "",
       ],
       items: (q.items ?? []) as any,
       vatRate: Number(q.vat_rate || 22),
       notes: q.notes,
+      bodyText: q.body,
+      exclusions: q.exclusions,
+      paymentConditions: q.payment_conditions,
       title: q.title,
       cantiere: q.cantiere,
       paymentMethod: q.payment_method || defaultMethod?.typeLabel,
@@ -284,34 +381,6 @@ function PreventiviPage() {
 
   const toggleSelectOne = (id: string) => {
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]));
-  };
-
-  const submit = async () => {
-    if (!form) return;
-    try {
-      await save.mutateAsync({
-        id: form.id,
-        client_id: form.client_id,
-        number: form.number,
-        date: form.date,
-        valid_until: form.secondary_date,
-        items: form.items,
-        vat_rate: form.vat_rate,
-        notes: form.notes,
-        status: form.status,
-        template: form.template,
-        title: form.title,
-        cantiere: form.cantiere,
-        payment_method_id: form.payment_method_id,
-        payment_method: form.payment_method,
-        payment_iban: form.payment_iban,
-        total: docTotals(form.items, form.vat_rate).total,
-      });
-      toast.success("Preventivo salvato con successo.");
-      setOpen(false);
-    } catch {
-      toast.error("Salvataggio non riuscito.");
-    }
   };
 
   const openWhatsApp = (phone?: string, clientName?: string, q?: any) => {
@@ -474,13 +543,51 @@ function PreventiviPage() {
     }
   };
 
+  // Se è in corso la compilazione di un preventivo, mostriamo l'editor direttamente nella sezione!
+  if (editingQuote) {
+    const editingClient = allClients.find((c: any) => c.id === editingQuote.client_id);
+    return (
+      <AppLayout
+        title={`Preventivo ${editingQuote.number}`}
+        description={`Compilazione diretta preventivo per ${editingClient?.name || "cliente"}`}
+      >
+        <QuoteInlineEditor
+          value={editingQuote}
+          onChange={setEditingQuote}
+          onSave={() => handleSaveQuote(editingQuote)}
+          onBack={() => setEditingQuote(null)}
+          company={company.data ?? DEFAULT_COMPANY}
+          clients={allClients}
+          saving={save.isPending}
+          onDuplicate={() => handleDuplicate(editingQuote)}
+          onDelete={() => {
+            if (editingQuote.id && confirm(`Eliminare il preventivo ${editingQuote.number}?`)) {
+              remove.mutate(editingQuote.id);
+              setEditingQuote(null);
+            }
+          }}
+          onOpenPreviewModal={(val) => handleOpenPreview(val)}
+        />
+
+        {/* Modal Anteprima PDF aperta dal pulsante dedicato */}
+        <DocPreviewModal
+          open={previewOpen}
+          onOpenChange={setPreviewOpen}
+          company={company.data ?? DEFAULT_COMPANY}
+          data={previewData}
+        />
+      </AppLayout>
+    );
+  }
+
+  // Visualizzazione standard dell'elenco preventivi con apertura rapida
   return (
     <AppLayout
       title="Preventivi"
       description="Gestione offerte, revisioni e preventivi con anteprima PDF."
       actions={
         <Button
-          onClick={openNew}
+          onClick={handleOpenQuickCreate}
           className="bg-primary hover:bg-primary/90 text-primary-foreground font-medium px-2.5 sm:px-4 py-2 shadow-xs rounded-lg gap-1.5 shrink-0"
         >
           <div className="flex items-center gap-1">
@@ -520,24 +627,22 @@ function PreventiviPage() {
 
           <button
             type="button"
-            onClick={() => setStatusFilter("accettato")}
+            onClick={() => setStatusFilter("bozza")}
             className={`rounded-xl border p-3.5 sm:p-4 text-left transition-all bg-card shadow-xs flex flex-col justify-between min-h-[96px] sm:min-h-[104px] ${
-              statusFilter === "accettato"
-                ? "border-emerald-500 ring-1 ring-emerald-500/20 shadow-xs"
+              statusFilter === "bozza"
+                ? "border-primary ring-1 ring-primary/20 shadow-xs"
                 : "border-border hover:bg-muted/30"
             }`}
           >
-            <div className="flex items-center justify-between text-emerald-700 dark:text-emerald-400">
-              <span className="text-xs font-medium">Accettati</span>
-              <CheckCircle2 className="size-4" />
+            <div className="flex items-center justify-between text-muted-foreground">
+              <span className="text-xs font-medium">In Bozza</span>
+              <FileText className="size-4 text-muted-foreground" />
             </div>
             <div>
               <p className="text-xl sm:text-2xl font-bold text-foreground font-mono tabular-nums mt-1">
-                {countsByStatus.accettato}
+                {countsByStatus.bozza}
               </p>
-              <p className="text-[11px] sm:text-xs text-emerald-600/80 mt-0.5 truncate">
-                Confermati dal cliente
-              </p>
+              <p className="text-[11px] sm:text-xs text-muted-foreground mt-0.5">In preparazione</p>
             </div>
           </button>
 
@@ -550,221 +655,317 @@ function PreventiviPage() {
                 : "border-border hover:bg-muted/30"
             }`}
           >
-            <div className="flex items-center justify-between text-blue-700 dark:text-blue-400">
-              <span className="text-xs font-medium">In attesa (Inviati)</span>
+            <div className="flex items-center justify-between text-blue-600 dark:text-blue-400">
+              <span className="text-xs font-medium">Inviati</span>
               <Clock className="size-4" />
             </div>
             <div>
               <p className="text-xl sm:text-2xl font-bold text-foreground font-mono tabular-nums mt-1">
                 {countsByStatus.inviato}
               </p>
-              <p className="text-[11px] sm:text-xs text-blue-600/80 mt-0.5 truncate">
-                In attesa di riscontro
+              <p className="text-[11px] sm:text-xs text-blue-600/80 dark:text-blue-400/80 mt-0.5">
+                In attesa risposta
               </p>
             </div>
           </button>
 
           <button
             type="button"
-            onClick={() => setStatusFilter("bozza")}
+            onClick={() => setStatusFilter("accettato")}
             className={`rounded-xl border p-3.5 sm:p-4 text-left transition-all bg-card shadow-xs flex flex-col justify-between min-h-[96px] sm:min-h-[104px] ${
-              statusFilter === "bozza"
-                ? "border-foreground/30 ring-1 ring-foreground/10 shadow-xs"
+              statusFilter === "accettato"
+                ? "border-emerald-500 ring-1 ring-emerald-500/20 shadow-xs"
                 : "border-border hover:bg-muted/30"
             }`}
           >
-            <div className="flex items-center justify-between text-muted-foreground">
-              <span className="text-xs font-medium">Bozze</span>
-              <FileText className="size-4 opacity-50" />
+            <div className="flex items-center justify-between text-emerald-600 dark:text-emerald-400">
+              <span className="text-xs font-medium">Accettati</span>
+              <CheckCircle2 className="size-4" />
             </div>
             <div>
               <p className="text-xl sm:text-2xl font-bold text-foreground font-mono tabular-nums mt-1">
-                {countsByStatus.bozza}
+                {countsByStatus.accettato}
               </p>
-              <p className="text-[11px] sm:text-xs text-muted-foreground/80 mt-0.5 truncate">
-                Da finalizzare
+              <p className="text-[11px] sm:text-xs text-emerald-600/80 dark:text-emerald-400/80 mt-0.5">
+                Confermati
               </p>
             </div>
           </button>
         </div>
 
-        {/* Toolbar con filtri multipli */}
-        <div className="rounded-xl border border-border bg-card p-3 sm:p-4 shadow-xs space-y-3">
-          <div className="flex flex-col md:grid md:grid-cols-12 gap-3">
-            {/* Ricerca per testo + Toggle filtri mobile */}
-            <div className="flex items-center gap-2 md:col-span-4">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        {/* Card Contenitore Principale con Tabella e Filtri (integrata identica a interventi, fatture e clienti) */}
+        <div className="bg-card rounded-xl border border-border shadow-xs overflow-hidden">
+          {/* Barra Superiore: Ricerca e Filtri */}
+          <div className="p-4 border-b border-border space-y-3">
+            <div className="flex flex-row items-center justify-between gap-2 sm:gap-2.5">
+              {/* Ricerca istantanea (su mobile ridotta per far apparire il pulsante filtri a destra) */}
+              <div className="relative flex-1 min-w-0 max-w-md">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
                 <Input
-                  placeholder="Cerca numero, cliente, note..."
+                  type="text"
+                  placeholder="Cerca per numero, cliente, oggetto..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="pl-9 bg-background shadow-xs rounded-lg"
+                  className="pl-9 pr-8 h-9 text-xs sm:text-sm bg-background border-border"
                 />
+                {search && (
+                  <button
+                    type="button"
+                    onClick={() => setSearch("")}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-0.5"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                )}
               </div>
 
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
+              {/* Azioni Toolbar e Filtri */}
+              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                {/* Menu azioni massive (visibile o abilitato con selezione) */}
+                {selectedIds.length > 0 && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-9 text-xs font-medium bg-muted/50 border-primary/40 gap-1.5 px-2.5 sm:px-3"
+                      >
+                        <SlidersHorizontal className="size-3.5 text-primary" />
+                        <span className="hidden sm:inline">Azioni</span>
+                        <span>({selectedIds.length})</span>
+                        <ChevronDown className="size-3.5 opacity-60 hidden sm:inline" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-52">
+                      <DropdownMenuItem
+                        onClick={handleExportCsv}
+                        className="text-xs cursor-pointer gap-2"
+                      >
+                        <Download className="size-3.5" /> Esporta selezionati (CSV)
+                      </DropdownMenuItem>
+                      {selectedIds.length === 1 && (
+                        <DropdownMenuItem
+                          onClick={handleDuplicateSingleSelected}
+                          className="text-xs cursor-pointer gap-2"
+                        >
+                          <Copy className="size-3.5" /> Duplica preventivo
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onClick={handleDeleteSelected}
+                        className="text-xs cursor-pointer text-destructive focus:text-destructive gap-2"
+                      >
+                        <Trash2 className="size-3.5" /> Elimina selezionati ({selectedIds.length})
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+
+                {/* Tasto filtri mobile: a destra della barra di ricerca anziché sotto */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowMobileFilters(!showMobileFilters)}
+                  className="sm:hidden h-9 text-xs gap-1.5 shrink-0 px-2.5"
+                >
+                  <SlidersHorizontal className="size-3.5" />
+                  <span>Filtri</span>
+                  {activeFilterCount > 0 && (
+                    <Badge variant="secondary" className="px-1.5 py-0 text-[10px] h-4">
+                      {activeFilterCount}
+                    </Badge>
+                  )}
+                </Button>
+
+                {/* Filtri Desktop in linea */}
+                <div className="hidden sm:flex items-center gap-2">
+                  <Select value={statusFilter} onValueChange={setStatusFilter}>
+                    <SelectTrigger className="h-9 text-xs w-[130px] bg-background border-border">
+                      <SelectValue placeholder="Stato" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Tutti gli stati ({countsByStatus.all})</SelectItem>
+                      <SelectItem value="bozza">In Bozza ({countsByStatus.bozza})</SelectItem>
+                      <SelectItem value="inviato">Inviato ({countsByStatus.inviato})</SelectItem>
+                      <SelectItem value="accettato">
+                        Accettato ({countsByStatus.accettato})
+                      </SelectItem>
+                      <SelectItem value="rifiutato">
+                        Rifiutato ({countsByStatus.rifiutato})
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  <Select value={periodFilter} onValueChange={setPeriodFilter}>
+                    <SelectTrigger className="h-9 text-xs w-[130px] bg-background border-border">
+                      <SelectValue placeholder="Periodo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Tutte le date</SelectItem>
+                      <SelectItem value="this_month">Questo mese</SelectItem>
+                      <SelectItem value="last_3_months">Ultimi 3 mesi</SelectItem>
+                      <SelectItem value="this_year">Anno corrente</SelectItem>
+                      <SelectItem value="expiring_soon">In scadenza (7 gg)</SelectItem>
+                      <SelectItem value="expired">Scaduti</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  <Select value={amountFilter} onValueChange={setAmountFilter}>
+                    <SelectTrigger className="h-9 text-xs w-[130px] bg-background border-border">
+                      <SelectValue placeholder="Importo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Tutti gli importi</SelectItem>
+                      <SelectItem value="under_500">&lt; 500 €</SelectItem>
+                      <SelectItem value="500_1500">500 € - 1.500 €</SelectItem>
+                      <SelectItem value="1500_5000">1.500 € - 5.000 €</SelectItem>
+                      <SelectItem value="over_5000">&gt; 5.000 €</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  <Select value={clientFilter} onValueChange={setClientFilter}>
+                    <SelectTrigger className="h-9 text-xs w-[140px] bg-background border-border">
+                      <SelectValue placeholder="Cliente" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-60">
+                      <SelectItem value="all">Tutti i clienti</SelectItem>
+                      {allClients.map((c: any) => (
+                        <SelectItem key={c.id} value={c.id} className="text-xs">
+                          {c.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  {hasActiveFilters && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={resetFilters}
+                      className="h-9 text-xs text-muted-foreground hover:text-foreground px-2 gap-1"
+                      title="Azzera filtri"
+                    >
+                      <FilterX className="size-3.5" />
+                      <span className="hidden md:inline">Reset</span>
+                    </Button>
+                  )}
+
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-9 text-xs font-semibold uppercase px-2.5 rounded-lg shadow-xs flex items-center gap-1 cursor-pointer shrink-0"
-                    title="Altre azioni sui preventivi"
+                    onClick={handleExportCsv}
+                    className="h-9 text-xs gap-1.5"
+                    title="Esporta preventivi in formato CSV"
                   >
-                    Altro
-                    <ChevronDown className="size-3.5" />
+                    <Download className="size-3.5 text-muted-foreground" />
+                    <span>Esporta</span>
                   </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuItem
-                    disabled={selectedIds.length === 0}
-                    onClick={handleDeleteSelected}
-                    className="text-destructive cursor-pointer text-xs"
-                  >
-                    <Trash2 className="mr-2 size-4" />
-                    Elimina selezionati ({selectedIds.length})
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    disabled={selectedIds.length !== 1}
-                    onClick={handleDuplicateSingleSelected}
-                    className="cursor-pointer text-xs"
-                  >
-                    <Copy className="mr-2 size-4" />
-                    Duplica selezionato
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={handleExportCsv} className="cursor-pointer text-xs">
-                    <Download className="mr-2 size-4" />
-                    Esporta elenco (.CSV)
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={toggleSelectAll} className="cursor-pointer text-xs">
-                    {selectedIds.length === filteredRows.length && filteredRows.length > 0
-                      ? "Deseleziona tutti"
-                      : "Seleziona tutti"}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-
-              <Button
-                type="button"
-                variant={showMobileFilters || activeFilterCount > 0 ? "secondary" : "outline"}
-                size="sm"
-                onClick={() => setShowMobileFilters((prev) => !prev)}
-                className="md:hidden shrink-0 h-9 px-3 gap-1.5 rounded-lg border-border"
-              >
-                <SlidersHorizontal className="size-3.5" />
-                <span>Filtri</span>
-                {activeFilterCount > 0 && (
-                  <span className="flex size-4.5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground px-1">
-                    {activeFilterCount}
-                  </span>
-                )}
-                <ChevronDown
-                  className={cn(
-                    "size-3.5 transition-transform duration-200",
-                    showMobileFilters && "rotate-180",
-                  )}
-                />
-              </Button>
+                </div>
+              </div>
             </div>
 
-            {/* Menu a scomparsa filtri su mobile, sempre in linea su desktop */}
-            <div
-              className={cn(
-                "md:col-span-8 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3",
-                showMobileFilters ? "grid" : "hidden md:grid",
-              )}
-            >
-              {/* Filtro 1: Stato */}
-              <div>
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="bg-background shadow-xs rounded-lg">
-                    <SelectValue placeholder="Tutti gli stati" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Tutti gli stati</SelectItem>
-                    <SelectItem value="bozza">Bozza</SelectItem>
-                    <SelectItem value="inviato">Inviato</SelectItem>
-                    <SelectItem value="accettato">Accettato</SelectItem>
-                    <SelectItem value="rifiutato">Rifiutato</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Filtro 2: Periodo / Scadenze */}
-              <div>
-                <Select value={periodFilter} onValueChange={setPeriodFilter}>
-                  <SelectTrigger className="bg-background shadow-xs rounded-lg">
-                    <SelectValue placeholder="Periodo" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Tutte le date</SelectItem>
-                    <SelectItem value="this_month">Questo mese</SelectItem>
-                    <SelectItem value="last_3_months">Ultimi 3 mesi</SelectItem>
-                    <SelectItem value="this_year">Anno in corso</SelectItem>
-                    <SelectItem value="expiring_soon">In scadenza (7 gg)</SelectItem>
-                    <SelectItem value="expired">Scaduti</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Filtro 3: Importo */}
-              <div>
-                <Select value={amountFilter} onValueChange={setAmountFilter}>
-                  <SelectTrigger className="bg-background shadow-xs rounded-lg">
-                    <SelectValue placeholder="Importo" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Tutti gli importi</SelectItem>
-                    <SelectItem value="under_500">Meno di 500 €</SelectItem>
-                    <SelectItem value="500_1500">500 € – 1.500 €</SelectItem>
-                    <SelectItem value="1500_5000">1.500 € – 5.000 €</SelectItem>
-                    <SelectItem value="over_5000">Oltre 5.000 €</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Filtro 4: Cliente */}
-              <div>
-                <Select value={clientFilter} onValueChange={setClientFilter}>
-                  <SelectTrigger className="bg-background shadow-xs rounded-lg">
-                    <SelectValue placeholder="Cliente" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Tutti i clienti</SelectItem>
-                    {(clients.data ?? []).map((c: any) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.name}
+            {/* Filtri collassabili su Mobile */}
+            {showMobileFilters && (
+              <div className="sm:hidden grid grid-cols-2 gap-2 pt-2 border-t border-border/60">
+                <div>
+                  <label className="text-[10px] font-medium text-muted-foreground mb-1 block">
+                    Stato
+                  </label>
+                  <Select value={statusFilter} onValueChange={setStatusFilter}>
+                    <SelectTrigger className="h-8 text-xs bg-background">
+                      <SelectValue placeholder="Stato" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Tutti gli stati ({countsByStatus.all})</SelectItem>
+                      <SelectItem value="bozza">In Bozza ({countsByStatus.bozza})</SelectItem>
+                      <SelectItem value="inviato">Inviato ({countsByStatus.inviato})</SelectItem>
+                      <SelectItem value="accettato">
+                        Accettato ({countsByStatus.accettato})
                       </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                      <SelectItem value="rifiutato">
+                        Rifiutato ({countsByStatus.rifiutato})
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-medium text-muted-foreground mb-1 block">
+                    Periodo
+                  </label>
+                  <Select value={periodFilter} onValueChange={setPeriodFilter}>
+                    <SelectTrigger className="h-8 text-xs bg-background">
+                      <SelectValue placeholder="Periodo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Tutte le date</SelectItem>
+                      <SelectItem value="this_month">Questo mese</SelectItem>
+                      <SelectItem value="last_3_months">Ultimi 3 mesi</SelectItem>
+                      <SelectItem value="this_year">Anno corrente</SelectItem>
+                      <SelectItem value="expiring_soon">In scadenza</SelectItem>
+                      <SelectItem value="expired">Scaduti</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-medium text-muted-foreground mb-1 block">
+                    Importo
+                  </label>
+                  <Select value={amountFilter} onValueChange={setAmountFilter}>
+                    <SelectTrigger className="h-8 text-xs bg-background">
+                      <SelectValue placeholder="Importo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Tutti gli importi</SelectItem>
+                      <SelectItem value="under_500">&lt; 500 €</SelectItem>
+                      <SelectItem value="500_1500">500 € - 1.500 €</SelectItem>
+                      <SelectItem value="1500_5000">1.500 € - 5.000 €</SelectItem>
+                      <SelectItem value="over_5000">&gt; 5.000 €</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-medium text-muted-foreground mb-1 block">
+                    Cliente
+                  </label>
+                  <Select value={clientFilter} onValueChange={setClientFilter}>
+                    <SelectTrigger className="h-8 text-xs bg-background">
+                      <SelectValue placeholder="Cliente" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-60">
+                      <SelectItem value="all">Tutti i clienti</SelectItem>
+                      {allClients.map((c: any) => (
+                        <SelectItem key={c.id} value={c.id} className="text-xs">
+                          {c.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {hasActiveFilters && (
+                  <div className="col-span-2 pt-1 flex justify-between items-center text-xs">
+                    <span className="text-muted-foreground text-[11px]">
+                      Trovati <strong className="text-foreground">{filteredRows.length}</strong> su{" "}
+                      {allQuotes.length}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={resetFilters}
+                      className="h-7 text-xs text-muted-foreground hover:text-foreground gap-1"
+                    >
+                      <FilterX className="size-3" /> Reimposta filtri
+                    </Button>
+                  </div>
+                )}
               </div>
-            </div>
+            )}
           </div>
 
-          {/* Reset Filtri Bar */}
-          {hasActiveFilters && (
-            <div className="flex items-center justify-between pt-2 border-t border-border/60 text-xs">
-              <span className="text-muted-foreground">
-                Trovati <strong className="text-foreground">{filteredRows.length}</strong>{" "}
-                preventivi su {allQuotes.length}
-              </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={resetFilters}
-                className="h-7 text-xs text-muted-foreground hover:text-foreground gap-1.5"
-              >
-                <FilterX className="size-3.5" /> Azzera filtri
-              </Button>
-            </div>
-          )}
-        </div>
-
-        {/* Modalità Lista / Tabella con Checkbox e Anteprima PDF */}
-        <div className="rounded-xl border border-border bg-card shadow-xs overflow-hidden">
           <Table>
             <TableHeader className="bg-muted/40">
               <TableRow className="hover:bg-transparent border-b border-border">
@@ -804,10 +1005,8 @@ function PreventiviPage() {
                     ) : (
                       <div className="flex flex-col items-center justify-center gap-2">
                         <FileText className="size-8 text-muted-foreground/40" />
-                        <p>
-                          Nessun preventivo presente. Crea il primo preventivo con anteprima PDF.
-                        </p>
-                        <Button size="sm" onClick={openNew}>
+                        <p>Nessun preventivo presente. Crea il primo preventivo per iniziare.</p>
+                        <Button size="sm" onClick={handleOpenQuickCreate}>
                           <Plus className="mr-1.5 size-4" /> Nuovo preventivo
                         </Button>
                       </div>
@@ -851,8 +1050,8 @@ function PreventiviPage() {
 
                       {/* Cliente */}
                       <TableCell className="py-3.5">
-                        <div className="min-w-0">
-                          <p className="font-medium text-foreground truncate">
+                        <div className="min-w-0 cursor-pointer" onClick={() => handleOpenEdit(q)}>
+                          <p className="font-medium text-foreground truncate hover:text-primary transition-colors">
                             {client?.name ?? "Senza cliente"}
                           </p>
                           {q.title ? (
@@ -912,10 +1111,10 @@ function PreventiviPage() {
                         {getStatusBadge(q.status)}
                       </TableCell>
 
-                      {/* Azioni con Tasto ANTEPRIMA PDF e WhatsApp */}
+                      {/* Azioni con Tasto ANTEPRIMA PDF, WhatsApp, Duplica, Modifica ed Elimina */}
                       <TableCell className="py-3.5 pr-4 text-right">
                         <div className="flex items-center justify-end gap-1">
-                          {/* ANTEPRIMA PDF DIRETTA SOTTO IL BOTTONE */}
+                          {/* ANTEPRIMA PDF DIRETTA */}
                           <Button
                             type="button"
                             size="icon"
@@ -964,14 +1163,14 @@ function PreventiviPage() {
                             <Copy className="size-4" />
                           </Button>
 
-                          {/* Apri / Modifica */}
+                          {/* Apri / Modifica Direttamente */}
                           <Button
                             type="button"
                             size="icon"
                             variant="ghost"
                             onClick={() => handleOpenEdit(q)}
                             className="size-8 text-muted-foreground hover:text-foreground cursor-pointer"
-                            title="Modifica preventivo"
+                            title="Modifica preventivo direttamente"
                           >
                             <Pencil className="size-4" />
                           </Button>
@@ -1000,7 +1199,7 @@ function PreventiviPage() {
             </TableBody>
           </Table>
 
-          {/* Barra inferiore con icona impostazioni e conteggio (Screenshot 2) */}
+          {/* Barra inferiore con icona impostazioni e conteggio */}
           <div className="p-3 border-t border-border bg-muted/20 flex items-center justify-between text-xs text-muted-foreground">
             <div className="flex items-center gap-2">
               <Link
@@ -1025,33 +1224,14 @@ function PreventiviPage() {
         </div>
       </div>
 
-      {/* Creazione Rapida Preventivo (Menu da Screenshot) */}
-      <DocCreateModal
-        open={createModalOpen}
-        onOpenChange={setCreateModalOpen}
-        docType="preventivo"
-        docLabel="Preventivo"
-        clients={clients.data ?? []}
+      {/* Scheda Preventivi in Apertura con poche informazioni essenziali per creare il preventivo */}
+      <QuoteQuickCreateModal
+        open={quickCreateOpen}
+        onOpenChange={setQuickCreateOpen}
+        clients={allClients}
         company={company.data ?? DEFAULT_COMPANY}
-        onConfirm={handleConfirmCreate}
+        onConfirm={handleQuickCreateConfirm}
       />
-
-      {/* Editor Documento */}
-      {form ? (
-        <DocumentEditor
-          open={open}
-          onOpenChange={setOpen}
-          docLabel="Preventivo"
-          secondaryDateLabel="Valido fino al"
-          statuses={STATUSES as unknown as string[]}
-          company={company.data ?? DEFAULT_COMPANY}
-          clients={clients.data ?? []}
-          value={form}
-          onChange={setForm}
-          onSave={submit}
-          saving={save.isPending}
-        />
-      ) : null}
 
       {/* Modal Anteprima PDF aperta dal pulsante dedicato nella riga */}
       <DocPreviewModal

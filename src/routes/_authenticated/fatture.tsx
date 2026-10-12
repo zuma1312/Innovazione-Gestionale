@@ -27,6 +27,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
@@ -51,9 +52,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { DocumentEditor, type DocFormValue } from "@/components/DocumentEditor";
+import type { DocFormValue } from "@/components/DocumentEditor";
 import { DocPreviewModal, type DocPreviewData } from "@/components/DocPreviewModal";
-import { DocCreateModal, type DocCreateInitialData } from "@/components/DocCreateModal";
+import {
+  FatturaQuickCreateModal,
+  type FatturaQuickInitialData,
+} from "@/components/fatture/FatturaQuickCreateModal";
+import { FatturaInlineEditor } from "@/components/fatture/FatturaInlineEditor";
 import { DEFAULT_COMPANY, useCompany, useList, useRemove, useSave } from "@/hooks/data";
 import { usePaymentMethods } from "@/hooks/usePaymentMethods";
 import { docTotals, emptyItem, formatCurrency, formatDate, nextNumber } from "@/lib/doc";
@@ -96,11 +101,13 @@ function FatturePage() {
   const save = useSave("invoices");
   const remove = useRemove("invoices");
 
-  const [open, setOpen] = useState(false);
-  const [form, setForm] = useState<DocFormValue | null>(null);
-  const [createModalOpen, setCreateModalOpen] = useState(false);
+  // Fattura correntemente in compilazione diretta inline (senza modale esterna)
+  const [editingInvoice, setEditingInvoice] = useState<DocFormValue | null>(null);
 
-  // Selezione multipla (stile screenshot)
+  // Scheda apertura rapida con poche informazioni
+  const [quickCreateOpen, setQuickCreateOpen] = useState(false);
+
+  // Selezione multipla
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [previewData, setPreviewData] = useState<DocPreviewData | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -116,93 +123,179 @@ function FatturePage() {
   const todayStr = new Date().toISOString().slice(0, 10);
   const today = useMemo(() => new Date(), []);
 
-  const openNew = () => {
+  const prefix = company.data?.invoice_prefix || "FT";
+  const defaultNotes = company.data?.invoice_default_notes || "";
+
+  // Apertura scheda rapida
+  const handleOpenQuickCreate = () => {
+    setQuickCreateOpen(true);
+  };
+
+  // Conferma scheda rapida: crea la fattura e la apre direttamente nella sezione
+  const handleQuickCreateConfirm = async (data: FatturaQuickInitialData) => {
+    setQuickCreateOpen(false);
     const existingNumbers = (invoices.data ?? []).map((i: any) => i.number);
-    setForm({
-      client_id: null,
-      number: nextNumber(company.data?.invoice_prefix || "FT", existingNumbers),
-      date: todayStr,
-      secondary_date: null,
+    const number = nextNumber(prefix, existingNumbers);
+
+    const newInvoice: DocFormValue = {
+      client_id: data.client_id,
+      number,
+      date: data.date,
+      secondary_date: data.due_date,
       items: [emptyItem()],
       vat_rate: Number(company.data?.default_vat_rate || 22),
-      notes: company.data?.invoice_default_notes || "",
+      notes: defaultNotes,
       status: "emessa",
       template: (company.data?.default_template as DocTemplate) || "classico",
-      title: "",
-      cantiere: "",
+      title: data.title,
+      cantiere: data.cantiere,
       payment_method_id: defaultMethod?.id,
       payment_method: defaultMethod?.typeLabel,
       payment_iban: defaultMethod?.iban ?? "",
-    });
-    setOpen(true);
+    };
+
+    try {
+      const res = await save.mutateAsync({
+        client_id: newInvoice.client_id,
+        number: newInvoice.number,
+        date: newInvoice.date,
+        due_date: newInvoice.secondary_date,
+        items: newInvoice.items,
+        vat_rate: newInvoice.vat_rate,
+        notes: newInvoice.notes,
+        status: newInvoice.status,
+        template: newInvoice.template,
+        title: newInvoice.title,
+        cantiere: newInvoice.cantiere,
+        payment_method_id: newInvoice.payment_method_id,
+        payment_method: newInvoice.payment_method,
+        payment_iban: newInvoice.payment_iban,
+        total: 0,
+      });
+
+      setEditingInvoice({
+        ...newInvoice,
+        id: (res as any)?.id,
+      });
+      toast.success(`Fattura ${number} creata. Ora puoi compilarla direttamente qui.`);
+    } catch {
+      toast.error("Errore durante la creazione della fattura.");
+    }
   };
 
-  const handleConfirmCreate = (data: DocCreateInitialData) => {
-    setCreateModalOpen(false);
-    const existingNumbers = (invoices.data ?? []).map((i: any) => i.number);
-
-    setForm({
-      client_id: data.client_id,
-      number: nextNumber("FT", existingNumbers),
-      date: data.date,
-      secondary_date: data.secondary_date,
-      items: [emptyItem()],
-      vat_rate: data.vat_rate,
-      notes: data.notes,
-      status: "emessa",
-      template: data.template,
-      title: data.title,
-      cantiere: data.cantiere,
-      payment_method_id: data.payment_method_id,
-      payment_method: data.payment_method,
-      payment_iban: data.payment_iban,
-    });
-    setOpen(true);
+  // Salvataggio della fattura compilata inline
+  const handleSaveInvoice = async (val: DocFormValue) => {
+    try {
+      const tot = docTotals(val.items, val.vat_rate).total;
+      await save.mutateAsync({
+        id: val.id,
+        client_id: val.client_id,
+        number: val.number,
+        date: val.date,
+        due_date: val.secondary_date,
+        items: val.items,
+        vat_rate: val.vat_rate,
+        notes: val.notes,
+        exclusions: val.exclusions,
+        payment_conditions: val.payment_conditions,
+        status: val.status,
+        template: val.template,
+        title: val.title,
+        body: val.body,
+        cantiere: val.cantiere,
+        payment_method_id: val.payment_method_id,
+        payment_method: val.payment_method,
+        payment_iban: val.payment_iban,
+        total: tot,
+      });
+      toast.success(`Fattura ${val.number} salvata con successo.`);
+    } catch {
+      toast.error("Errore durante il salvataggio della fattura.");
+    }
   };
 
-  const handleDuplicate = (inv: any) => {
-    const existingNumbers = (invoices.data ?? []).map((item: any) => item.number);
-    setForm({
-      client_id: inv.client_id,
-      number: nextNumber("FT", existingNumbers),
-      date: todayStr,
-      secondary_date: inv.due_date || null,
-      items: (inv.items ?? []).map((i: any) => ({ ...i })),
-      vat_rate: Number(inv.vat_rate || 22),
-      notes: inv.notes || "",
-      status: "emessa",
-      template: (inv.template as DocTemplate) || "classico",
-      title: inv.title ? `${inv.title} (Copia)` : "",
-      cantiere: inv.cantiere || "",
-      payment_method_id: inv.payment_method_id || defaultMethod?.id,
-      payment_method: inv.payment_method || defaultMethod?.typeLabel,
-      payment_iban: inv.payment_iban ?? defaultMethod?.iban ?? "",
-    });
-    setOpen(true);
-    toast.info("Fattura duplicata in una nuova bozza.");
-  };
-
-  const handleOpenEdit = (inv: any) => {
-    setForm({
+  // Apertura di una fattura esistente per modifica inline
+  const handleOpenEditInline = (inv: any) => {
+    setEditingInvoice({
       id: inv.id,
       client_id: inv.client_id,
       number: inv.number,
       date: inv.date,
       secondary_date: inv.due_date,
-      items: (inv.items ?? []) as any,
-      vat_rate: Number(inv.vat_rate),
-      notes: inv.notes,
-      status: inv.status,
-      template: inv.template as DocTemplate,
+      items: (inv.items && inv.items.length > 0 ? inv.items : [emptyItem()]) as any,
+      vat_rate: Number(inv.vat_rate ?? company.data?.default_vat_rate ?? 22),
+      notes: inv.notes || "",
+      exclusions: inv.exclusions || "",
+      payment_conditions: inv.payment_conditions || "",
+      status: inv.status || "emessa",
+      template: (inv.template as DocTemplate) || "classico",
       title: inv.title || "",
+      body: inv.body || "",
       cantiere: inv.cantiere || "",
       payment_method_id: inv.payment_method_id,
       payment_method: inv.payment_method,
       payment_iban: inv.payment_iban,
     });
-    setOpen(true);
   };
 
+  // Duplicazione di una fattura
+  const handleDuplicate = async (inv: any) => {
+    const existingNumbers = (invoices.data ?? []).map((item: any) => item.number);
+    const newNumber = nextNumber(prefix, existingNumbers);
+
+    const duplicatedInvoice: DocFormValue = {
+      client_id: inv.client_id,
+      number: newNumber,
+      date: todayStr,
+      secondary_date: inv.due_date || null,
+      items: (inv.items ?? []).map((i: any) => ({ ...i })),
+      vat_rate: Number(inv.vat_rate || 22),
+      notes: inv.notes || "",
+      exclusions: inv.exclusions || "",
+      payment_conditions: inv.payment_conditions || "",
+      status: "emessa",
+      template: (inv.template as DocTemplate) || "classico",
+      title: inv.title ? `${inv.title} (Copia)` : "",
+      body: inv.body || "",
+      cantiere: inv.cantiere || "",
+      payment_method_id: inv.payment_method_id || defaultMethod?.id,
+      payment_method: inv.payment_method || defaultMethod?.typeLabel,
+      payment_iban: inv.payment_iban ?? defaultMethod?.iban ?? "",
+    };
+
+    try {
+      const res = await save.mutateAsync({
+        client_id: duplicatedInvoice.client_id,
+        number: duplicatedInvoice.number,
+        date: duplicatedInvoice.date,
+        due_date: duplicatedInvoice.secondary_date,
+        items: duplicatedInvoice.items,
+        vat_rate: duplicatedInvoice.vat_rate,
+        notes: duplicatedInvoice.notes,
+        exclusions: duplicatedInvoice.exclusions,
+        payment_conditions: duplicatedInvoice.payment_conditions,
+        status: duplicatedInvoice.status,
+        template: duplicatedInvoice.template,
+        title: duplicatedInvoice.title,
+        body: duplicatedInvoice.body,
+        cantiere: duplicatedInvoice.cantiere,
+        payment_method_id: duplicatedInvoice.payment_method_id,
+        payment_method: duplicatedInvoice.payment_method,
+        payment_iban: duplicatedInvoice.payment_iban,
+        total: docTotals(duplicatedInvoice.items, duplicatedInvoice.vat_rate).total,
+      });
+
+      setEditingInvoice({
+        ...duplicatedInvoice,
+        id: (res as any)?.id,
+      });
+      toast.success(`Fattura duplicata con numero ${newNumber}.`);
+    } catch {
+      toast.error("Errore durante la duplicazione della fattura.");
+    }
+  };
+
+  // Anteprima PDF
   const handleOpenPreview = (inv: any) => {
     const client = (clients.data ?? []).find((c: any) => c.id === inv.client_id);
     setPreviewData({
@@ -210,22 +303,55 @@ function FatturePage() {
       number: inv.number,
       date: inv.date,
       secondaryDateLabel: "Scadenza pagamento",
-      secondaryDate: inv.due_date,
+      secondaryDate: inv.due_date || inv.secondary_date,
       template: (inv.template as DocTemplate) || "classico",
       clientName: client?.name ?? "Cliente",
       clientLines: [
         client?.address ?? "",
         [client?.zip, client?.city].filter(Boolean).join(" "),
-        client?.vat_number ? `P.IVA ${client.vat_number}` : "",
+        client?.vat_number ? `P.IVA/CF ${client.vat_number}` : "",
         client?.email ?? "",
       ],
       items: (inv.items ?? []) as any,
       vatRate: Number(inv.vat_rate || 22),
       notes: inv.notes,
+      exclusions: inv.exclusions,
+      paymentConditions: inv.payment_conditions,
+      bodyText: inv.body,
       title: inv.title,
       cantiere: inv.cantiere,
       paymentMethod: inv.payment_method || defaultMethod?.typeLabel,
       paymentIban: inv.payment_iban ?? defaultMethod?.iban ?? "",
+    });
+    setPreviewOpen(true);
+  };
+
+  const handleOpenPreviewFromInline = (val: DocFormValue) => {
+    const client = (clients.data ?? []).find((c: any) => c.id === val.client_id);
+    setPreviewData({
+      docLabel: "Fattura",
+      number: val.number,
+      date: val.date,
+      secondaryDateLabel: "Scadenza pagamento",
+      secondaryDate: val.secondary_date,
+      template: val.template,
+      clientName: client?.name ?? "Cliente",
+      clientLines: [
+        client?.address ?? "",
+        [client?.zip, client?.city].filter(Boolean).join(" "),
+        client?.vat_number ? `P.IVA/CF ${client.vat_number}` : "",
+        client?.email ?? "",
+      ],
+      items: val.items,
+      vatRate: val.vat_rate,
+      notes: val.notes,
+      exclusions: val.exclusions,
+      paymentConditions: val.payment_conditions,
+      bodyText: val.body,
+      title: val.title,
+      cantiere: val.cantiere,
+      paymentMethod: val.payment_method,
+      paymentIban: val.payment_iban,
     });
     setPreviewOpen(true);
   };
@@ -258,9 +384,9 @@ function FatturePage() {
         : filteredRows;
     const csv = [
       "Numero,Data,Scadenza,Cliente,Totale,Stato",
-      ...rowsToExport.map((inv: any) => {
-        const client = allClients.find((c: any) => c.id === inv.client_id);
-        return `"${inv.number}","${inv.date}","${inv.due_date || ""}","${client?.name || ""}","${inv.total || 0}","${inv.status}"`;
+      ...rowsToExport.map((row: any) => {
+        const client = allClients.find((c: any) => c.id === row.client_id);
+        return `"${row.number}","${row.date}","${row.due_date || ""}","${client?.name || ""}","${row.total}","${row.status}"`;
       }),
     ].join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -280,36 +406,10 @@ function FatturePage() {
     }
   };
 
-  const toggleSelectOne = (id: string) => {
-    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]));
-  };
-
-  const submit = async () => {
-    if (!form) return;
-    try {
-      await save.mutateAsync({
-        id: form.id,
-        client_id: form.client_id,
-        number: form.number,
-        date: form.date,
-        due_date: form.secondary_date,
-        items: form.items,
-        vat_rate: form.vat_rate,
-        notes: form.notes,
-        status: form.status,
-        template: form.template,
-        title: form.title,
-        cantiere: form.cantiere,
-        payment_method_id: form.payment_method_id,
-        payment_method: form.payment_method,
-        payment_iban: form.payment_iban,
-        total: docTotals(form.items, form.vat_rate).total,
-      });
-      toast.success("Fattura salvata con successo.");
-      setOpen(false);
-    } catch {
-      toast.error("Salvataggio non riuscito.");
-    }
+  const toggleSelectRow = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
+    );
   };
 
   const handleQuickStatusChange = async (inv: any, newStatus: string) => {
@@ -360,108 +460,67 @@ function FatturePage() {
       const tot = Number(inv.total || 0);
       totalInvoiced += tot;
 
-      const isPaid = inv.status === "pagata";
-      const isOverdue = !isPaid && inv.due_date && new Date(inv.due_date) < today;
-
-      if (isPaid) {
+      if (inv.status === "pagata") {
         totalPaid += tot;
         countPaid++;
+      } else if (inv.status === "insoluta") {
+        totalOverdue += tot;
+        countOverdue++;
       } else {
         totalPending += tot;
         countPending++;
       }
-
-      if (isOverdue) {
-        totalOverdue += tot;
-        countOverdue++;
-      }
     }
 
     return {
-      allCount: allInvoices.length,
       totalInvoiced,
       totalPaid,
-      countPaid,
       totalPending,
-      countPending,
       totalOverdue,
+      allCount: allInvoices.length,
+      countPaid,
+      countPending,
       countOverdue,
     };
-  }, [allInvoices, today]);
+  }, [allInvoices]);
 
   // Filtraggio avanzato
   const filteredRows = useMemo(() => {
     return allInvoices.filter((inv: any) => {
-      const client = allClients.find((c: any) => c.id === inv.client_id);
-      const clientName = client?.name || "";
-      const clientPhone = client?.phone || "";
-      const clientCity = client?.city || "";
-      const clientVat = client?.vat_number || "";
-
-      // Ricerca testuale
       const q = search.toLowerCase();
+      const client = allClients.find((c: any) => c.id === inv.client_id);
+      const clientName = (client?.name || "").toLowerCase();
       const num = (inv.number || "").toLowerCase();
       const title = (inv.title || "").toLowerCase();
-      const cantiere = (inv.cantiere || "").toLowerCase();
-      const notes = (inv.notes || "").toLowerCase();
 
-      if (
-        search &&
-        !num.includes(q) &&
-        !title.includes(q) &&
-        !cantiere.includes(q) &&
-        !clientName.toLowerCase().includes(q) &&
-        !clientPhone.includes(q) &&
-        !clientCity.toLowerCase().includes(q) &&
-        !clientVat.toLowerCase().includes(q) &&
-        !notes.includes(q)
-      ) {
+      if (search && !clientName.includes(q) && !num.includes(q) && !title.includes(q)) {
         return false;
       }
 
-      // Filtro stato
       if (statusFilter !== "all" && inv.status !== statusFilter) {
         return false;
       }
 
-      // Filtro cliente
       if (clientFilter !== "all" && inv.client_id !== clientFilter) {
         return false;
       }
 
-      // Filtro importo
-      const tot = Number(inv.total || 0);
-      if (amountFilter === "under_500" && tot >= 500) return false;
-      if (amountFilter === "500_2000" && (tot < 500 || tot > 2000)) return false;
-      if (amountFilter === "2000_5000" && (tot < 2000 || tot > 5000)) return false;
-      if (amountFilter === "over_5000" && tot <= 5000) return false;
+      if (amountFilter !== "all") {
+        const val = Number(inv.total || 0);
+        if (amountFilter === "under_500" && val >= 500) return false;
+        if (amountFilter === "500_2000" && (val < 500 || val > 2000)) return false;
+        if (amountFilter === "over_2000" && val <= 2000) return false;
+      }
 
-      // Filtro periodo
-      if (periodFilter !== "all") {
-        const invDate = new Date(inv.date);
-        const dueDate = inv.due_date ? new Date(inv.due_date) : null;
-        const isPaid = inv.status === "pagata";
+      if (periodFilter !== "all" && inv.date) {
+        const d = new Date(inv.date);
+        const diffDays = (today.getTime() - d.getTime()) / (1000 * 3600 * 24);
 
-        if (periodFilter === "this_month") {
-          if (
-            invDate.getFullYear() !== today.getFullYear() ||
-            invDate.getMonth() !== today.getMonth()
-          ) {
-            return false;
-          }
-        } else if (periodFilter === "last_3_months") {
-          const threeMonthsAgo = new Date();
-          threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
-          if (invDate < threeMonthsAgo) return false;
-        } else if (periodFilter === "this_year") {
-          if (invDate.getFullYear() !== today.getFullYear()) return false;
-        } else if (periodFilter === "overdue") {
-          if (!dueDate || dueDate >= today || isPaid) return false;
-        } else if (periodFilter === "expiring_soon") {
-          if (!dueDate || isPaid) return false;
-          const nextWeek = new Date();
-          nextWeek.setDate(nextWeek.getDate() + 7);
-          if (dueDate < today || dueDate > nextWeek) return false;
+        if (periodFilter === "month" && diffDays > 30) return false;
+        if (periodFilter === "quarter" && diffDays > 90) return false;
+        if (periodFilter === "year") {
+          const invYear = d.getFullYear();
+          if (invYear !== today.getFullYear()) return false;
         }
       }
 
@@ -529,13 +588,51 @@ function FatturePage() {
     }
   };
 
+  // Se è in corso la compilazione di una fattura, mostriamo l'editor direttamente nella sezione!
+  if (editingInvoice) {
+    const editingClient = allClients.find((c: any) => c.id === editingInvoice.client_id);
+    return (
+      <AppLayout
+        title={`Fattura ${editingInvoice.number}`}
+        description={`Compilazione diretta fattura per ${editingClient?.name || "cliente"}`}
+      >
+        <FatturaInlineEditor
+          value={editingInvoice}
+          onChange={setEditingInvoice}
+          onSave={() => handleSaveInvoice(editingInvoice)}
+          onBack={() => setEditingInvoice(null)}
+          company={company.data ?? DEFAULT_COMPANY}
+          clients={allClients}
+          saving={save.isPending}
+          onDuplicate={() => handleDuplicate(editingInvoice)}
+          onDelete={async () => {
+            if (editingInvoice.id && confirm(`Eliminare la fattura ${editingInvoice.number}?`)) {
+              await remove.mutateAsync(editingInvoice.id);
+              setEditingInvoice(null);
+              toast.success("Fattura eliminata.");
+            }
+          }}
+          onOpenPreviewModal={handleOpenPreviewFromInline}
+        />
+
+        {/* Modal Anteprima PDF aperta dall'editor inline */}
+        <DocPreviewModal
+          open={previewOpen}
+          onOpenChange={setPreviewOpen}
+          company={company.data ?? DEFAULT_COMPANY}
+          data={previewData}
+        />
+      </AppLayout>
+    );
+  }
+
   return (
     <AppLayout
       title="Fatture"
       description="Emissione, incassi e documenti fiscali con anteprima PDF in tempo reale."
       actions={
         <Button
-          onClick={openNew}
+          onClick={handleOpenQuickCreate}
           className="bg-primary hover:bg-primary/90 text-primary-foreground font-medium px-2.5 sm:px-4 py-2 shadow-xs rounded-lg gap-1.5 shrink-0"
         >
           <div className="flex items-center gap-1">
@@ -582,16 +679,16 @@ function FatturePage() {
                 : "border-border hover:bg-muted/30"
             }`}
           >
-            <div className="flex items-center justify-between text-emerald-700 dark:text-emerald-400">
+            <div className="flex items-center justify-between text-muted-foreground">
               <span className="text-xs font-medium">Incassato</span>
-              <CheckCircle2 className="size-4" />
+              <CheckCircle2 className="size-4 text-emerald-500" />
             </div>
             <div>
-              <p className="text-xl sm:text-2xl font-bold text-foreground font-mono tabular-nums mt-1">
+              <p className="text-xl sm:text-2xl font-bold text-emerald-600 dark:text-emerald-400 font-mono tabular-nums mt-1">
                 {formatCurrency(stats.totalPaid)}
               </p>
-              <p className="text-[11px] sm:text-xs text-emerald-600/80 mt-0.5 truncate">
-                {stats.countPaid} pagate con successo
+              <p className="text-[11px] sm:text-xs text-muted-foreground/80 mt-0.5 truncate">
+                {stats.countPaid} fatture saldate
               </p>
             </div>
           </button>
@@ -605,137 +702,163 @@ function FatturePage() {
                 : "border-border hover:bg-muted/30"
             }`}
           >
-            <div className="flex items-center justify-between text-blue-700 dark:text-blue-400">
+            <div className="flex items-center justify-between text-muted-foreground">
               <span className="text-xs font-medium">Da incassare</span>
-              <Clock className="size-4" />
+              <Clock className="size-4 text-blue-500" />
             </div>
             <div>
-              <p className="text-xl sm:text-2xl font-bold text-foreground font-mono tabular-nums mt-1">
+              <p className="text-xl sm:text-2xl font-bold text-blue-600 dark:text-blue-400 font-mono tabular-nums mt-1">
                 {formatCurrency(stats.totalPending)}
               </p>
-              <p className="text-[11px] sm:text-xs text-blue-600/80 mt-0.5 truncate">
-                {stats.countPending} in attesa di saldo
+              <p className="text-[11px] sm:text-xs text-muted-foreground/80 mt-0.5 truncate">
+                {stats.countPending} in attesa
               </p>
             </div>
           </button>
 
           <button
             type="button"
-            onClick={() => setPeriodFilter("overdue")}
+            onClick={() => setStatusFilter("insoluta")}
             className={`rounded-xl border p-3.5 sm:p-4 text-left transition-all bg-card shadow-xs flex flex-col justify-between min-h-[96px] sm:min-h-[104px] ${
-              periodFilter === "overdue"
+              statusFilter === "insoluta"
                 ? "border-rose-500 ring-1 ring-rose-500/20 shadow-xs"
                 : "border-border hover:bg-muted/30"
             }`}
           >
-            <div className="flex items-center justify-between text-rose-700 dark:text-rose-400">
-              <span className="text-xs font-medium">Scadute / Insolute</span>
-              <AlertTriangle className="size-4" />
+            <div className="flex items-center justify-between text-muted-foreground">
+              <span className="text-xs font-medium">Insoluti</span>
+              <AlertTriangle className="size-4 text-rose-500" />
             </div>
             <div>
-              <p className="text-xl sm:text-2xl font-bold text-foreground font-mono tabular-nums mt-1">
+              <p className="text-xl sm:text-2xl font-bold text-rose-600 dark:text-rose-400 font-mono tabular-nums mt-1">
                 {formatCurrency(stats.totalOverdue)}
               </p>
-              <p className="text-[11px] sm:text-xs text-rose-600/80 mt-0.5 truncate">
-                {stats.countOverdue} oltre i termini
+              <p className="text-[11px] sm:text-xs text-muted-foreground/80 mt-0.5 truncate">
+                {stats.countOverdue} scadute
               </p>
             </div>
           </button>
         </div>
 
-        {/* Toolbar con filtri multipli */}
-        <div className="rounded-xl border border-border bg-card p-3 sm:p-4 shadow-xs space-y-3">
-          <div className="flex flex-col md:grid md:grid-cols-12 gap-3">
-            {/* Ricerca per numero, cliente, note + Toggle filtri mobile */}
-            <div className="flex items-center gap-2 md:col-span-4">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        {/* Card Contenitore Principale con Tabella e Filtri */}
+        <div className="bg-card rounded-xl border border-border shadow-xs overflow-hidden">
+          {/* Barra Superiore: Ricerca e Filtri */}
+          <div className="p-4 border-b border-border space-y-3">
+            <div className="flex flex-col sm:flex-row gap-2.5 sm:items-center justify-between">
+              {/* Ricerca veloce */}
+              <div className="relative flex-1 max-w-md">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
                 <Input
-                  placeholder="Cerca numero, cliente, P.IVA, note..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="pl-9 bg-background shadow-xs rounded-lg"
+                  placeholder="Cerca fattura, cliente o oggetto..."
+                  className="pl-9 h-9 text-xs sm:text-sm bg-background border-border"
                 />
+                {search && (
+                  <button
+                    onClick={() => setSearch("")}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-0.5"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                )}
               </div>
 
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-9 text-xs font-semibold uppercase px-2.5 rounded-lg shadow-xs flex items-center gap-1 cursor-pointer shrink-0"
-                    title="Altre azioni sulle fatture"
-                  >
-                    Altro
-                    <ChevronDown className="size-3.5" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuItem
-                    disabled={selectedIds.length === 0}
-                    onClick={handleDeleteSelected}
-                    className="text-destructive cursor-pointer text-xs"
-                  >
-                    <Trash2 className="mr-2 size-4" />
-                    Elimina selezionate ({selectedIds.length})
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    disabled={selectedIds.length !== 1}
-                    onClick={handleDuplicateSingleSelected}
-                    className="cursor-pointer text-xs"
-                  >
-                    <Copy className="mr-2 size-4" />
-                    Duplica selezionata
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={handleExportCsv} className="cursor-pointer text-xs">
-                    <Download className="mr-2 size-4" />
-                    Esporta elenco (.CSV)
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={toggleSelectAll} className="cursor-pointer text-xs">
-                    {selectedIds.length === filteredRows.length && filteredRows.length > 0
-                      ? "Deseleziona tutte"
-                      : "Seleziona tutte"}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-
-              <Button
-                type="button"
-                variant={showMobileFilters || activeFilterCount > 0 ? "secondary" : "outline"}
-                size="sm"
-                onClick={() => setShowMobileFilters((prev) => !prev)}
-                className="md:hidden shrink-0 h-9 px-3 gap-1.5 rounded-lg border-border"
-              >
-                <SlidersHorizontal className="size-3.5" />
-                <span>Filtri</span>
-                {activeFilterCount > 0 && (
-                  <span className="flex size-4.5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground px-1">
-                    {activeFilterCount}
-                  </span>
-                )}
-                <ChevronDown
-                  className={cn(
-                    "size-3.5 transition-transform duration-200",
-                    showMobileFilters && "rotate-180",
+              {/* Azioni Toolbar */}
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowMobileFilters(!showMobileFilters)}
+                  className="sm:hidden h-9 text-xs gap-1.5"
+                >
+                  <SlidersHorizontal className="size-3.5" />
+                  <span>Filtri</span>
+                  {activeFilterCount > 0 && (
+                    <Badge variant="secondary" className="px-1.5 py-0 text-[10px] h-4">
+                      {activeFilterCount}
+                    </Badge>
                   )}
-                />
-              </Button>
+                </Button>
+
+                <div className="hidden sm:flex items-center gap-2">
+                  {/* Filtro Stato */}
+                  <Select value={statusFilter} onValueChange={setStatusFilter}>
+                    <SelectTrigger className="h-9 text-xs w-[130px] bg-background border-border">
+                      <SelectValue placeholder="Stato" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Tutti gli stati</SelectItem>
+                      <SelectItem value="emessa">Emessa</SelectItem>
+                      <SelectItem value="inviata">Inviata</SelectItem>
+                      <SelectItem value="pagata">Pagata</SelectItem>
+                      <SelectItem value="insoluta">Insoluta</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  {/* Filtro Periodo */}
+                  <Select value={periodFilter} onValueChange={setPeriodFilter}>
+                    <SelectTrigger className="h-9 text-xs w-[130px] bg-background border-border">
+                      <SelectValue placeholder="Periodo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Tutto il periodo</SelectItem>
+                      <SelectItem value="month">Ultimi 30 giorni</SelectItem>
+                      <SelectItem value="quarter">Ultimi 3 mesi</SelectItem>
+                      <SelectItem value="year">Anno corrente</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  {/* Filtro Importo */}
+                  <Select value={amountFilter} onValueChange={setAmountFilter}>
+                    <SelectTrigger className="h-9 text-xs w-[130px] bg-background border-border">
+                      <SelectValue placeholder="Importo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Tutti gli importi</SelectItem>
+                      <SelectItem value="under_500">&lt; 500 €</SelectItem>
+                      <SelectItem value="500_2000">500 € - 2.000 €</SelectItem>
+                      <SelectItem value="over_2000">&gt; 2.000 €</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  {/* Filtro Cliente */}
+                  <Select value={clientFilter} onValueChange={setClientFilter}>
+                    <SelectTrigger className="h-9 text-xs w-[140px] bg-background border-border">
+                      <SelectValue placeholder="Cliente" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-60">
+                      <SelectItem value="all">Tutti i clienti</SelectItem>
+                      {allClients.map((c: any) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {hasActiveFilters && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={resetFilters}
+                    className="h-9 text-xs text-muted-foreground hover:text-foreground px-2 gap-1"
+                    title="Azzera filtri"
+                  >
+                    <FilterX className="size-3.5" />
+                    <span className="hidden md:inline">Reset</span>
+                  </Button>
+                )}
+              </div>
             </div>
 
-            {/* Menu a scomparsa filtri su mobile, sempre in linea su desktop */}
-            <div
-              className={cn(
-                "md:col-span-8 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3",
-                showMobileFilters ? "grid" : "hidden md:grid",
-              )}
-            >
-              {/* Filtro 1: Stato */}
-              <div>
+            {/* Filtri collassabili su Mobile */}
+            {showMobileFilters && (
+              <div className="sm:hidden grid grid-cols-2 gap-2 pt-2 border-t border-border/60">
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="bg-background shadow-xs rounded-lg">
-                    <SelectValue placeholder="Tutti gli stati" />
+                  <SelectTrigger className="h-8 text-xs bg-background">
+                    <SelectValue placeholder="Stato" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Tutti gli stati</SelectItem>
@@ -745,32 +868,36 @@ function FatturePage() {
                     <SelectItem value="insoluta">Insoluta</SelectItem>
                   </SelectContent>
                 </Select>
-              </div>
 
-              {/* Filtro 2: Periodo / Scadenze */}
-              <div>
                 <Select value={periodFilter} onValueChange={setPeriodFilter}>
-                  <SelectTrigger className="bg-background shadow-xs rounded-lg">
+                  <SelectTrigger className="h-8 text-xs bg-background">
                     <SelectValue placeholder="Periodo" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Tutte le date</SelectItem>
-                    <SelectItem value="this_month">Questo mese</SelectItem>
-                    <SelectItem value="last_3_months">Ultimi 3 mesi</SelectItem>
-                    <SelectItem value="this_year">Anno in corso</SelectItem>
-                    <SelectItem value="expiring_soon">In scadenza (7 gg)</SelectItem>
-                    <SelectItem value="overdue">Scadute</SelectItem>
+                    <SelectItem value="all">Tutto il periodo</SelectItem>
+                    <SelectItem value="month">Ultimi 30 giorni</SelectItem>
+                    <SelectItem value="quarter">Ultimi 3 mesi</SelectItem>
+                    <SelectItem value="year">Anno corrente</SelectItem>
                   </SelectContent>
                 </Select>
-              </div>
 
-              {/* Filtro 3: Cliente */}
-              <div>
-                <Select value={clientFilter} onValueChange={setClientFilter}>
-                  <SelectTrigger className="bg-background shadow-xs rounded-lg">
-                    <SelectValue placeholder="Cliente" />
+                <Select value={amountFilter} onValueChange={setAmountFilter}>
+                  <SelectTrigger className="h-8 text-xs bg-background">
+                    <SelectValue placeholder="Importo" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="all">Tutti gli importi</SelectItem>
+                    <SelectItem value="under_500">&lt; 500 €</SelectItem>
+                    <SelectItem value="500_2000">500 € - 2.000 €</SelectItem>
+                    <SelectItem value="over_2000">&gt; 2.000 €</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Select value={clientFilter} onValueChange={setClientFilter}>
+                  <SelectTrigger className="h-8 text-xs bg-background">
+                    <SelectValue placeholder="Cliente" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-60">
                     <SelectItem value="all">Tutti i clienti</SelectItem>
                     {allClients.map((c: any) => (
                       <SelectItem key={c.id} value={c.id}>
@@ -780,243 +907,213 @@ function FatturePage() {
                   </SelectContent>
                 </Select>
               </div>
+            )}
 
-              {/* Filtro 4: Importo */}
-              <div>
-                <Select value={amountFilter} onValueChange={setAmountFilter}>
-                  <SelectTrigger className="bg-background shadow-xs rounded-lg">
-                    <SelectValue placeholder="Importo" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Tutti gli importi</SelectItem>
-                    <SelectItem value="under_500">Meno di 500 €</SelectItem>
-                    <SelectItem value="500_2000">500 € – 2.000 €</SelectItem>
-                    <SelectItem value="2000_5000">2.000 € – 5.000 €</SelectItem>
-                    <SelectItem value="over_5000">Oltre 5.000 €</SelectItem>
-                  </SelectContent>
-                </Select>
+            {/* Barra Azioni Multiple */}
+            {selectedIds.length > 0 && (
+              <div className="flex items-center justify-between p-2.5 rounded-lg bg-primary/10 border border-primary/20 text-xs">
+                <span className="font-medium text-foreground">
+                  {selectedIds.length}{" "}
+                  {selectedIds.length === 1 ? "fattura selezionata" : "fatture selezionate"}
+                </span>
+                <div className="flex items-center gap-2">
+                  {selectedIds.length === 1 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleDuplicateSingleSelected}
+                      className="h-7 text-xs gap-1 bg-background"
+                    >
+                      <Copy className="size-3" />
+                      <span>Duplica</span>
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleExportCsv}
+                    className="h-7 text-xs gap-1 bg-background"
+                  >
+                    <Download className="size-3" />
+                    <span>Esporta CSV</span>
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={handleDeleteSelected}
+                    className="h-7 text-xs gap-1"
+                  >
+                    <Trash2 className="size-3" />
+                    <span>Elimina ({selectedIds.length})</span>
+                  </Button>
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
-          {/* Reset Filtri Bar */}
-          {hasActiveFilters && (
-            <div className="flex items-center justify-between pt-2 border-t border-border/60 text-xs">
-              <span className="text-muted-foreground">
-                Trovate <strong className="text-foreground">{filteredRows.length}</strong> fatture
-                su {allInvoices.length}
-              </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={resetFilters}
-                className="h-7 text-xs text-muted-foreground hover:text-foreground gap-1.5"
-              >
-                <FilterX className="size-3.5" /> Azzera filtri
-              </Button>
-            </div>
-          )}
-        </div>
-
-        {/* Modalità Lista / Tabella Fatture con Checkbox e Anteprima PDF */}
-        <div className="rounded-xl border border-border bg-card shadow-xs overflow-hidden">
+          {/* Tabella Fatture */}
           <Table>
             <TableHeader className="bg-muted/40">
-              <TableRow className="hover:bg-transparent border-b border-border">
-                <TableHead className="w-12 pl-4">
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="w-10 text-center">
                   <Checkbox
-                    checked={filteredRows.length > 0 && selectedIds.length === filteredRows.length}
+                    checked={selectedIds.length === filteredRows.length && filteredRows.length > 0}
                     onCheckedChange={toggleSelectAll}
                     aria-label="Seleziona tutte"
                   />
                 </TableHead>
-                <TableHead className="font-semibold text-foreground py-3">Numero</TableHead>
-                <TableHead className="font-semibold text-foreground py-3">Cliente</TableHead>
-                <TableHead className="font-semibold text-foreground py-3">Data emissione</TableHead>
-                <TableHead className="font-semibold text-foreground py-3">
-                  Scadenza pagamento
-                </TableHead>
-                <TableHead className="font-semibold text-foreground py-3 text-right">
-                  Importo
-                </TableHead>
-                <TableHead className="font-semibold text-foreground py-3 text-center">
-                  Stato incasso
-                </TableHead>
-                <TableHead className="font-semibold text-foreground py-3 pr-4 text-right">
-                  Azioni
-                </TableHead>
+                <TableHead className="w-[110px]">Numero</TableHead>
+                <TableHead className="w-[100px]">Data</TableHead>
+                <TableHead>Cliente & Oggetto</TableHead>
+                <TableHead className="w-[120px]">Scadenza</TableHead>
+                <TableHead className="w-[110px] text-right">Totale</TableHead>
+                <TableHead className="w-[130px]">Stato</TableHead>
+                <TableHead className="w-[150px] text-right">Azioni</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredRows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="h-40 text-center text-sm text-muted-foreground">
-                    {hasActiveFilters ? (
-                      <div className="flex flex-col items-center justify-center gap-2">
-                        <p>Nessuna fattura corrisponde ai filtri impostati.</p>
-                        <Button variant="outline" size="sm" onClick={resetFilters}>
-                          Reimposta filtri
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col items-center justify-center gap-2">
-                        <Receipt className="size-8 text-muted-foreground/40" />
-                        <p>Nessuna fattura presente. Crea la prima fattura con anteprima PDF.</p>
-                        <Button size="sm" onClick={openNew}>
-                          <Plus className="mr-1.5 size-4" /> Nuova fattura
-                        </Button>
-                      </div>
-                    )}
+                  <TableCell colSpan={8} className="text-center py-12 text-muted-foreground">
+                    <Receipt className="size-8 mx-auto mb-2 opacity-40" />
+                    <p className="font-medium">Nessuna fattura trovata</p>
+                    <p className="text-xs mt-0.5">
+                      {hasActiveFilters
+                        ? "Prova a modificare i filtri applicati."
+                        : "Crea la tua prima fattura cliccando su 'Nuova fattura'."}
+                    </p>
                   </TableCell>
                 </TableRow>
               ) : (
                 filteredRows.map((inv: any) => {
                   const client = allClients.find((c: any) => c.id === inv.client_id);
-                  const isPaid = inv.status === "pagata";
-                  const isOverdue = !isPaid && inv.due_date && new Date(inv.due_date) < today;
                   const isSelected = selectedIds.includes(inv.id);
 
                   return (
                     <TableRow
                       key={inv.id}
-                      className={`hover:bg-muted/40 transition-colors border-b border-border/60 ${
-                        isSelected ? "bg-muted/50" : ""
-                      }`}
+                      className={cn(
+                        "group hover:bg-muted/30 transition-colors cursor-pointer",
+                        isSelected && "bg-primary/5",
+                      )}
+                      onClick={(e) => {
+                        // Evita click se cliccato su azioni o checkbox
+                        if ((e.target as HTMLElement).closest("button, input, [role=checkbox], a"))
+                          return;
+                        handleOpenEditInline(inv);
+                      }}
                     >
-                      {/* Checkbox selezione riga */}
-                      <TableCell className="w-12 pl-4 py-3.5">
+                      <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
                         <Checkbox
                           checked={isSelected}
-                          onCheckedChange={() => toggleSelectOne(inv.id)}
-                          aria-label={`Seleziona fattura ${inv.number}`}
+                          onCheckedChange={() => toggleSelectRow(inv.id)}
+                          aria-label={`Seleziona ${inv.number}`}
                         />
                       </TableCell>
 
-                      {/* Numero */}
-                      <TableCell className="py-3.5">
-                        <button
-                          type="button"
-                          onClick={() => handleOpenEdit(inv)}
-                          className="flex items-center gap-2 font-semibold text-foreground hover:text-primary transition-colors text-left cursor-pointer"
-                        >
-                          <Receipt className="size-4 text-primary shrink-0" />
-                          <span>{inv.number || "FT"}</span>
-                        </button>
+                      <TableCell className="font-mono font-semibold text-foreground text-xs sm:text-sm">
+                        {inv.number}
                       </TableCell>
 
-                      {/* Cliente */}
-                      <TableCell className="py-3.5">
-                        <div className="min-w-0">
-                          <p className="font-medium text-foreground truncate">
-                            {client?.name ?? "Senza cliente"}
-                          </p>
-                          {inv.title ? (
-                            <p className="text-xs font-semibold text-primary truncate mt-0.5">
-                              {inv.title}
-                              {inv.cantiere ? (
-                                <span className="font-normal text-muted-foreground ml-1.5">
-                                  · {inv.cantiere}
-                                </span>
-                              ) : null}
-                            </p>
-                          ) : null}
-                          {client?.city || client?.phone ? (
-                            <p className="text-xs text-muted-foreground truncate">
-                              {[client?.city, client?.phone].filter(Boolean).join(" · ")}
-                            </p>
-                          ) : null}
+                      <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                        {formatDate(inv.date)}
+                      </TableCell>
+
+                      <TableCell>
+                        <div className="font-medium text-foreground text-xs sm:text-sm flex items-center gap-1.5">
+                          <span>{client?.name ?? "Cliente non specificato"}</span>
+                          {client?.city && (
+                            <span className="text-muted-foreground text-[11px] font-normal">
+                              ({client.city})
+                            </span>
+                          )}
                         </div>
-                      </TableCell>
-
-                      {/* Data emissione */}
-                      <TableCell className="py-3.5 text-sm text-muted-foreground">
-                        <span className="flex items-center gap-1.5">
-                          <Calendar className="size-3.5 text-muted-foreground/60" />
-                          {formatDate(inv.date)}
-                        </span>
-                      </TableCell>
-
-                      {/* Scadenza pagamento */}
-                      <TableCell className="py-3.5 text-sm">
-                        {inv.due_date ? (
-                          <span
-                            className={
-                              isOverdue
-                                ? "text-rose-600 dark:text-rose-400 font-semibold text-xs flex items-center gap-1"
-                                : "text-muted-foreground text-xs"
-                            }
-                          >
-                            {formatDate(inv.due_date)}
-                            {isOverdue && " (Scaduta)"}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground/40 text-xs">—</span>
+                        {inv.title && (
+                          <div className="text-xs text-muted-foreground truncate max-w-xs sm:max-w-md">
+                            {inv.title}
+                          </div>
                         )}
                       </TableCell>
 
-                      {/* Importo Totale */}
-                      <TableCell className="py-3.5 text-right">
-                        <p className="font-bold text-foreground text-sm">
-                          {formatCurrency(Number(inv.total || 0))}
-                        </p>
-                        <p className="text-[10px] text-muted-foreground">
-                          IVA {inv.vat_rate}% inc.
-                        </p>
+                      <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                        {inv.due_date ? formatDate(inv.due_date) : "—"}
                       </TableCell>
 
-                      {/* Stato con Cambio Rapido */}
-                      <TableCell className="py-3.5 text-center">
-                        <Select
-                          value={inv.status || "emessa"}
-                          onValueChange={(val) => handleQuickStatusChange(inv, val)}
-                        >
-                          <SelectTrigger className="h-7 w-auto border-0 shadow-none bg-transparent hover:bg-muted/40 p-0 focus:ring-0">
-                            {getStatusBadge(inv.status || "emessa")}
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="emessa">Emessa</SelectItem>
-                            <SelectItem value="inviata">Inviata</SelectItem>
-                            <SelectItem value="pagata">Pagata</SelectItem>
-                            <SelectItem value="insoluta">Insoluta</SelectItem>
-                          </SelectContent>
-                        </Select>
+                      <TableCell className="text-right font-mono font-semibold text-foreground text-xs sm:text-sm whitespace-nowrap">
+                        {formatCurrency(Number(inv.total || 0))}
                       </TableCell>
 
-                      {/* Azioni sulla riga con Tasto Anteprima PDF */}
-                      <TableCell className="py-3.5 pr-4 text-right">
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              type="button"
+                              className="focus:outline-none cursor-pointer flex items-center gap-1"
+                            >
+                              {getStatusBadge(inv.status)}
+                              <ChevronDown className="size-3 text-muted-foreground opacity-60" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start">
+                            <DropdownMenuItem
+                              onClick={() => handleQuickStatusChange(inv, "emessa")}
+                            >
+                              Emessa
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleQuickStatusChange(inv, "inviata")}
+                            >
+                              Inviata
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleQuickStatusChange(inv, "pagata")}
+                            >
+                              Pagata
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleQuickStatusChange(inv, "insoluta")}
+                            >
+                              Insoluta
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+
+                      <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1">
-                          {/* TASTO ANTEPRIMA PDF DIRETTO */}
+                          {/* Modifica Inline */}
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => handleOpenEditInline(inv)}
+                            className="size-8 text-primary hover:text-primary hover:bg-primary/10 cursor-pointer"
+                            title="Compila / Modifica fattura"
+                          >
+                            <Pencil className="size-4" />
+                          </Button>
+
+                          {/* Anteprima PDF */}
                           <Button
                             type="button"
                             size="icon"
                             variant="ghost"
                             onClick={() => handleOpenPreview(inv)}
-                            className="size-8 text-primary hover:bg-primary/15 transition-colors cursor-pointer"
-                            title="Visualizza anteprima PDF"
+                            className="size-8 text-muted-foreground hover:text-foreground cursor-pointer"
+                            title="Anteprima PDF"
                           >
                             <Eye className="size-4" />
                           </Button>
 
-                          {/* TASTO WHATSAPP */}
-                          {client?.phone ? (
+                          {/* WhatsApp */}
+                          {client?.phone && (
                             <Button
                               type="button"
                               size="icon"
                               variant="ghost"
                               onClick={() => openWhatsApp(client.phone, client.name, inv)}
-                              className="size-8 text-[#25D366] hover:bg-[#25D366]/15 hover:text-[#20BA5A] transition-colors cursor-pointer"
-                              title="Invia o ricorda su WhatsApp"
-                            >
-                              <WhatsAppIcon className="size-4" />
-                            </Button>
-                          ) : (
-                            <Button
-                              type="button"
-                              size="icon"
-                              variant="ghost"
-                              disabled
-                              className="size-8 opacity-25 cursor-not-allowed"
-                              title="Nessun numero cliente per WhatsApp"
+                              className="size-8 text-[#25D366] hover:bg-[#25D366]/10 cursor-pointer"
+                              title="Invia tramite WhatsApp"
                             >
                               <WhatsAppIcon className="size-4" />
                             </Button>
@@ -1029,21 +1126,9 @@ function FatturePage() {
                             variant="ghost"
                             onClick={() => handleDuplicate(inv)}
                             className="size-8 text-muted-foreground hover:text-foreground cursor-pointer"
-                            title="Duplica fattura"
+                            title="Duplica"
                           >
                             <Copy className="size-4" />
-                          </Button>
-
-                          {/* Modifica */}
-                          <Button
-                            type="button"
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => handleOpenEdit(inv)}
-                            className="size-8 text-muted-foreground hover:text-foreground cursor-pointer"
-                            title="Modifica fattura"
-                          >
-                            <Pencil className="size-4" />
                           </Button>
 
                           {/* Elimina */}
@@ -1070,7 +1155,7 @@ function FatturePage() {
             </TableBody>
           </Table>
 
-          {/* Barra inferiore con icona impostazioni e conteggio (Screenshot 2) */}
+          {/* Barra inferiore con icona impostazioni e conteggio */}
           <div className="p-3 border-t border-border bg-muted/20 flex items-center justify-between text-xs text-muted-foreground">
             <div className="flex items-center gap-2">
               <Link
@@ -1095,35 +1180,16 @@ function FatturePage() {
         </div>
       </div>
 
-      {/* Creazione Rapida Fattura (Menu da Screenshot) */}
-      <DocCreateModal
-        open={createModalOpen}
-        onOpenChange={setCreateModalOpen}
-        docType="fattura"
-        docLabel="Fattura"
+      {/* Scheda Rapida di Creazione Fattura */}
+      <FatturaQuickCreateModal
+        open={quickCreateOpen}
+        onOpenChange={setQuickCreateOpen}
         clients={allClients}
         company={company.data ?? DEFAULT_COMPANY}
-        onConfirm={handleConfirmCreate}
+        onConfirm={handleQuickCreateConfirm}
       />
 
-      {/* Editor Documento */}
-      {form ? (
-        <DocumentEditor
-          open={open}
-          onOpenChange={setOpen}
-          docLabel="Fattura"
-          secondaryDateLabel="Scadenza"
-          statuses={STATUSES as unknown as string[]}
-          company={company.data ?? DEFAULT_COMPANY}
-          clients={allClients}
-          value={form}
-          onChange={setForm}
-          onSave={submit}
-          saving={save.isPending}
-        />
-      ) : null}
-
-      {/* Modal Anteprima PDF aperta dal pulsante dedicato */}
+      {/* Modal Anteprima PDF */}
       <DocPreviewModal
         open={previewOpen}
         onOpenChange={setPreviewOpen}

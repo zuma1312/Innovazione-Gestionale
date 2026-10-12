@@ -27,7 +27,6 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarInset,
   SidebarMenu,
@@ -37,12 +36,13 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { useCompany } from "@/hooks/data";
 import { useSidebarNavConfig, NAV_ICONS_MAP } from "@/hooks/useSidebarNavConfig";
 
 const NAV = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/clienti", label: "Clienti", icon: Users },
   { to: "/agenda", label: "Agenda", icon: CalendarDays },
+  { to: "/clienti", label: "Clienti", icon: Users },
   { to: "/interventi", label: "Interventi", icon: Wrench },
   { to: "/preventivi", label: "Preventivi", icon: FileText },
   { to: "/fatture", label: "Fatture", icon: Receipt },
@@ -63,6 +63,7 @@ export function AppLayout({
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const company = useCompany();
   const [email, setEmail] = useState("");
 
   useEffect(() => {
@@ -88,23 +89,33 @@ export function AppLayout({
     }
   };
 
+  const currentLogo = company.data?.logo_url || logo;
+
   return (
     <SidebarProvider>
       <Sidebar collapsible="icon">
-        <SidebarHeader className="border-b border-sidebar-border px-3 py-4 group-data-[collapsible=icon]:px-1.5 group-data-[collapsible=icon]:py-3.5 transition-all">
-          <div className="flex items-center gap-2 group-data-[collapsible=icon]:justify-center">
-            <img
-              src={logo}
-              alt="Innovazione Termica"
-              width={36}
-              height={36}
-              className="size-9 shrink-0 aspect-square object-contain"
-            />
-            <div className="min-w-0 group-data-[collapsible=icon]:hidden">
-              <p className="truncate text-sm font-bold tracking-wide">INNOVAZIONE</p>
-              <p className="truncate text-xs text-sidebar-foreground/70">TERMICA · Roma</p>
+        <SidebarHeader className="border-b border-sidebar-border px-3 py-3.5 group-data-[collapsible=icon]:px-1.5 group-data-[collapsible=icon]:py-3 transition-all">
+          <Link
+            to="/dashboard"
+            title="Vai alla Dashboard principale"
+            className="flex items-center gap-2.5 group-data-[collapsible=icon]:justify-center cursor-pointer hover:opacity-85 transition-opacity rounded-lg p-1 -m-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+          >
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-card/60 overflow-hidden border border-border/50 p-0.5 shadow-2xs">
+              <img
+                src={currentLogo}
+                alt="ArtigianoSmart"
+                width={36}
+                height={36}
+                className="max-h-full max-w-full object-contain rounded-md"
+              />
             </div>
-          </div>
+            <div className="min-w-0 group-data-[collapsible=icon]:hidden">
+              <p className="truncate text-base font-semibold tracking-tight text-sidebar-foreground font-sans">
+                <span className="font-bold text-foreground">Artigiano</span>
+                <span className="font-black text-primary ml-0.5">Smart</span>
+              </p>
+            </div>
+          </Link>
         </SidebarHeader>
         <SidebarContent>
           <AppSidebarNav pathname={pathname} />
@@ -154,17 +165,6 @@ function AppSidebarNav({ pathname }: { pathname: string }) {
 
   return (
     <SidebarGroup>
-      <div className="flex items-center justify-between px-2 pb-1">
-        <SidebarGroupLabel className="p-0 text-sidebar-foreground/70">Gestionale</SidebarGroupLabel>
-        <Link
-          to="/impostazioni"
-          title="Personalizza e ordina sezioni barra laterale"
-          className="text-[11px] text-sidebar-foreground/50 hover:text-sidebar-foreground transition-colors font-medium hover:underline group-data-[collapsible=icon]:hidden"
-          onClick={handleNavClick}
-        >
-          Personalizza
-        </Link>
-      </div>
       <SidebarGroupContent>
         <SidebarMenu>
           {visibleItems.map((item) => {

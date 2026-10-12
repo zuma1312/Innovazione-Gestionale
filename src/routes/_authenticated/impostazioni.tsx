@@ -26,9 +26,11 @@ import {
   MapPin,
   MoreHorizontal,
   Pencil,
+  Percent,
   Phone,
   Plus,
   RotateCcw,
+  Ruler,
   Share2,
   ShieldCheck,
   SlidersHorizontal,
@@ -86,6 +88,8 @@ import {
   SDI_PAYMENT_TYPES,
   type PaymentMethod,
 } from "@/hooks/usePaymentMethods";
+import { useVatRates, type VatRate } from "@/hooks/useVatRates";
+import { useUnitsOfMeasure, type UnitOfMeasure } from "@/hooks/useUnitsOfMeasure";
 import defaultLogo from "@/assets/logo.png";
 import { cn } from "@/lib/utils";
 
@@ -407,31 +411,38 @@ function ImpostazioniPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!["image/png", "image/jpeg"].includes(file.type)) {
-      toast.error("Formato non valido. Seleziona un file PNG o JPG.");
+    const allowed = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"];
+    if (!allowed.includes(file.type)) {
+      toast.error("Formato non valido. Seleziona un file PNG, JPG, WEBP o SVG.");
       return;
     }
 
-    if (file.size > 2 * 1024 * 1024) {
-      toast.error("Il file supera la dimensione massima di 2 MB.");
+    if (file.size > 3 * 1024 * 1024) {
+      toast.error("Il file supera la dimensione massima di 3 MB.");
       return;
     }
 
     const reader = new FileReader();
     reader.onload = (event) => {
       const src = event.target?.result as string;
+      if (file.type === "image/svg+xml") {
+        setForm((prev) => ({ ...prev, logo_url: src }));
+        toast.success("Logo aggiornato (ricordati di salvare la scheda).");
+        return;
+      }
+
       const img = new Image();
       img.onload = () => {
-        if (img.width < 80 || img.height < 80) {
-          toast.error("L'immagine deve essere di almeno 80×80 px.");
+        if (img.width < 40 || img.height < 40) {
+          toast.error("L'immagine deve essere di almeno 40×40 px.");
           return;
         }
-        if (img.width > 4000 || img.height > 4000) {
-          toast.error("L'immagine non può superare i 4000 px di lato.");
+        if (img.width > 5000 || img.height > 5000) {
+          toast.error("L'immagine non può superare i 5000 px di lato.");
           return;
         }
 
-        const maxSide = 800;
+        const maxSide = 1000;
         let targetWidth = img.width;
         let targetHeight = img.height;
 
@@ -452,9 +463,10 @@ function ImpostazioniPage() {
         if (!ctx) return;
         ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
 
-        const resizedDataUrl = canvas.toDataURL(file.type, 0.92);
+        const mime = file.type === "image/jpeg" ? "image/jpeg" : "image/png";
+        const resizedDataUrl = canvas.toDataURL(mime, 0.94);
         setForm((prev) => ({ ...prev, logo_url: resizedDataUrl }));
-        toast.success("Logo aggiornato.");
+        toast.success("Logo aggiornato (ricordati di salvare la scheda).");
       };
       img.src = src;
     };
@@ -1122,8 +1134,9 @@ function ImpostazioniPage() {
                 <div className="rounded-xl border border-border bg-card p-6 shadow-xs space-y-4">
                   <h3 className="text-base font-semibold text-foreground">Logo aziendale</h3>
                   <p className="text-xs text-muted-foreground">
-                    Compare in intestazione sui preventivi, fatture e rapportini. PNG o JPG, max 2
-                    MB.
+                    Applicato a tutti i documenti creati (preventivi, fatture e rapportini di
+                    lavoro) e visualizzato nella barra laterale con proporzioni e dimensioni
+                    ottimali. Formati supportati: PNG, JPG, WEBP o SVG (max 3 MB).
                   </p>
                   <div className="flex flex-wrap items-center gap-5 pt-2">
                     <div className="flex size-20 sm:size-24 items-center justify-center rounded-lg border border-border bg-background p-2 overflow-hidden shadow-xs">
@@ -1137,7 +1150,7 @@ function ImpostazioniPage() {
                       <input
                         ref={fileInputRef}
                         type="file"
-                        accept="image/png,image/jpeg"
+                        accept="image/png,image/jpeg,image/webp,image/svg+xml"
                         className="hidden"
                         onChange={handleLogoUpload}
                       />
@@ -1146,16 +1159,18 @@ function ImpostazioniPage() {
                         variant="outline"
                         onClick={() => fileInputRef.current?.click()}
                       >
-                        Sostituisci logo
+                        {form.logo_url ? "Sostituisci logo" : "Carica logo"}
                       </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        className="text-muted-foreground hover:text-foreground"
-                        onClick={handleRemoveLogo}
-                      >
-                        Rimuovi
-                      </Button>
+                      {form.logo_url && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          className="text-muted-foreground hover:text-foreground"
+                          onClick={handleRemoveLogo}
+                        >
+                          Rimuovi
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </div>

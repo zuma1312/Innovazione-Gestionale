@@ -48,6 +48,8 @@ export type DocFormValue = {
   payment_method_id?: string;
   payment_method?: string;
   payment_iban?: string;
+  payment_conditions?: string;
+  exclusions?: string;
 };
 
 type Props = {
