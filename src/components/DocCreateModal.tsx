@@ -26,8 +26,9 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { ClientOption } from "@/components/DocumentEditor";
 import type { CompanyInfo, DocTemplate } from "@/lib/doc";
-import { TEMPLATES } from "@/lib/doc";
+import { TEMPLATES, DEFAULT_VAT_RATES } from "@/lib/doc";
 import { usePaymentMethods } from "@/hooks/usePaymentMethods";
+import { useCompany } from "@/hooks/data";
 import { cn } from "@/lib/utils";
 
 export type DocCreateInitialData = {
@@ -70,6 +71,11 @@ export function DocCreateModal({
   onConfirm,
 }: Props) {
   const { methods, defaultMethod } = usePaymentMethods();
+  const companyQuery = useCompany();
+  const configuredVatRates =
+    companyQuery.data?.vat_rates && companyQuery.data.vat_rates.length > 0
+      ? companyQuery.data.vat_rates
+      : DEFAULT_VAT_RATES;
 
   const todayStr = new Date().toISOString().slice(0, 10);
   const defaultValidityDays =
@@ -401,18 +407,16 @@ export function DocCreateModal({
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="22" className="text-xs">
-                          22% (Ordinaria)
-                        </SelectItem>
-                        <SelectItem value="10" className="text-xs">
-                          10% (Edilizia / Ristrutturazione)
-                        </SelectItem>
-                        <SelectItem value="4" className="text-xs">
-                          4% (Prima casa / Agevolata)
-                        </SelectItem>
-                        <SelectItem value="0" className="text-xs">
-                          0% (Esente / Forfettario)
-                        </SelectItem>
+                        {configuredVatRates.map((vr) => (
+                          <SelectItem key={vr.id} value={String(vr.rate)} className="text-xs">
+                            {vr.rate}% ({vr.label})
+                          </SelectItem>
+                        ))}
+                        {!configuredVatRates.some((vr) => Number(vr.rate) === Number(vatRate)) && (
+                          <SelectItem value={String(vatRate)} className="text-xs">
+                            {vatRate}% (Personalizzata)
+                          </SelectItem>
+                        )}
                       </SelectContent>
                     </Select>
                   </div>

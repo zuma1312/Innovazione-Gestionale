@@ -34,11 +34,13 @@ import {
   Share2,
   ShieldCheck,
   SlidersHorizontal,
+  Smartphone,
   Trash2,
   Users,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppLayout } from "@/components/AppLayout";
+import { IOSInstallGuideModal } from "@/components/IOSInstallGuideModal";
 import {
   useSidebarNavConfig,
   NAV_ICONS_MAP,
@@ -84,25 +86,29 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { DEFAULT_SETTINGS, useCompany, useSaveCompany, type CompanySettings } from "@/hooks/data";
 import {
+  DEFAULT_VAT_RATES,
+  DEFAULT_UNITS_OF_MEASURE,
+  type VatRateOption,
+  type UnitOfMeasureOption,
+} from "@/lib/doc";
+import {
   usePaymentMethods,
   SDI_PAYMENT_TYPES,
   type PaymentMethod,
 } from "@/hooks/usePaymentMethods";
-import { useVatRates, type VatRate } from "@/hooks/useVatRates";
-import { useUnitsOfMeasure, type UnitOfMeasure } from "@/hooks/useUnitsOfMeasure";
 import defaultLogo from "@/assets/logo.png";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/impostazioni")({
   head: () => ({
     meta: [
-      { title: "Impostazioni e Configurazione — INNOVAZIONE TERMICA" },
+      { title: "Impostazioni e Configurazione — Azienda Demo Srl" },
       {
         name: "description",
         content:
           "Configurazione sistema: profilo di fatturazione, modalità di pagamento, utenti, modelli e SDI.",
       },
-      { property: "og:title", content: "Impostazioni e Configurazione — INNOVAZIONE TERMICA" },
+      { property: "og:title", content: "Impostazioni e Configurazione — Azienda Demo Srl" },
       {
         property: "og:description",
         content: "Gestione profilo fatturazione, modalità di pagamento e parametri aziendali.",
@@ -293,6 +299,9 @@ function ImpostazioniPage() {
   const [menuIsDirty, setMenuIsDirty] = useState(false);
   const saveMenuRef = useRef<(() => void) | null>(null);
 
+  // Modalità standalone e guida iOS
+  const [iosGuideOpen, setIosGuideOpen] = useState(false);
+
   // Stato Modalità di Pagamento (Screenshot 2)
   const [selectedMethodIds, setSelectedMethodIds] = useState<string[]>([]);
   const [sortAsc, setSortAsc] = useState(true);
@@ -309,6 +318,40 @@ function ImpostazioniPage() {
     iban: "",
     is_default: false,
   });
+
+  // Modali e form per Aliquote IVA e Unità di Misura (Avanzate)
+  const [vatModalOpen, setVatModalOpen] = useState(false);
+  const [editingVat, setEditingVat] = useState<VatRateOption | null>(null);
+  const [vatForm, setVatForm] = useState<{
+    rate: number;
+    label: string;
+    description: string;
+    is_default: boolean;
+  }>({
+    rate: 22,
+    label: "Ordinaria 22%",
+    description: "",
+    is_default: false,
+  });
+
+  const [unitModalOpen, setUnitModalOpen] = useState(false);
+  const [editingUnit, setEditingUnit] = useState<UnitOfMeasureOption | null>(null);
+  const [unitForm, setUnitForm] = useState<{
+    code: string;
+    name: string;
+    category: string;
+    is_default: boolean;
+  }>({
+    code: "pz",
+    name: "Pezzo / Pezzi",
+    category: "Quantità",
+    is_default: false,
+  });
+
+  const [origin, setOrigin] = useState("");
+  useEffect(() => {
+    setOrigin(window.location.origin);
+  }, []);
 
   useEffect(() => {
     if (company.data) {
@@ -330,6 +373,16 @@ function ImpostazioniPage() {
           company.data.quote_payment_terms || DEFAULT_SETTINGS.quote_payment_terms,
         quote_default_exclusions:
           company.data.quote_default_exclusions || DEFAULT_SETTINGS.quote_default_exclusions,
+        vat_rates:
+          company.data.vat_rates && company.data.vat_rates.length > 0
+            ? company.data.vat_rates
+            : DEFAULT_VAT_RATES,
+        units_of_measure:
+          company.data.units_of_measure && company.data.units_of_measure.length > 0
+            ? company.data.units_of_measure
+            : DEFAULT_UNITS_OF_MEASURE,
+        default_unit_of_measure:
+          company.data.default_unit_of_measure || DEFAULT_SETTINGS.default_unit_of_measure,
       };
       setForm(merged);
       setSavedForm(merged);
@@ -379,6 +432,10 @@ function ImpostazioniPage() {
         "quote_validity_days",
         "price_decimals",
         "currency",
+        "default_vat_rate",
+        "vat_rates",
+        "units_of_measure",
+        "default_unit_of_measure",
       ],
       gestione_link: ["public_link_expiration_days", "public_link_require_signature"],
     }),
@@ -392,7 +449,14 @@ function ImpostazioniPage() {
     }
     const fields = TAB_FIELDS[activeTab];
     if (!fields || fields.length === 0) return false;
-    return fields.some((key) => form[key] !== savedForm[key]);
+    return fields.some((key) => {
+      const formVal = form[key];
+      const savedVal = savedForm[key];
+      if (Array.isArray(formVal) || (typeof formVal === "object" && formVal !== null)) {
+        return JSON.stringify(formVal) !== JSON.stringify(savedVal);
+      }
+      return formVal !== savedVal;
+    });
   }, [activeTab, form, savedForm, menuIsDirty, TAB_FIELDS]);
 
   // Verifica se una specifica scheda ha modifiche
@@ -401,7 +465,14 @@ function ImpostazioniPage() {
       if (tabId === "personalizza_menu") return menuIsDirty;
       const fields = TAB_FIELDS[tabId];
       if (!fields || fields.length === 0) return false;
-      return fields.some((key) => form[key] !== savedForm[key]);
+      return fields.some((key) => {
+        const formVal = form[key];
+        const savedVal = savedForm[key];
+        if (Array.isArray(formVal) || (typeof formVal === "object" && formVal !== null)) {
+          return JSON.stringify(formVal) !== JSON.stringify(savedVal);
+        }
+        return formVal !== savedVal;
+      });
     },
     [TAB_FIELDS, form, savedForm, menuIsDirty],
   );
@@ -529,7 +600,7 @@ function ImpostazioniPage() {
     setPaymentForm({
       code: "MP05",
       name: "Bonifico",
-      iban: form.iban || "IT20X0878773190000000070774",
+      iban: form.iban || "IT00X0000000000000000000000",
       is_default: false,
     });
     setPaymentModalOpen(true);
@@ -614,6 +685,267 @@ function ImpostazioniPage() {
     toast.success("Modalità predefinita aggiornata per tutti i nuovi documenti.");
   };
 
+  // ========================================================
+  // GESTIONE ALIQUOTE IVA (AVANZATE)
+  // ========================================================
+  const currentVatRates = useMemo<VatRateOption[]>(() => {
+    if (form.vat_rates && Array.isArray(form.vat_rates) && form.vat_rates.length > 0) {
+      return form.vat_rates;
+    }
+    return DEFAULT_VAT_RATES;
+  }, [form.vat_rates]);
+
+  const handleOpenAddVat = () => {
+    setEditingVat(null);
+    setVatForm({
+      rate: 22,
+      label: "",
+      description: "",
+      is_default: false,
+    });
+    setVatModalOpen(true);
+  };
+
+  const handleOpenEditVat = (item: VatRateOption) => {
+    setEditingVat(item);
+    setVatForm({
+      rate: item.rate,
+      label: item.label,
+      description: item.description || "",
+      is_default: Boolean(item.is_default || form.default_vat_rate === item.rate),
+    });
+    setVatModalOpen(true);
+  };
+
+  const handleSaveVat = () => {
+    if (vatForm.rate < 0 || isNaN(vatForm.rate)) {
+      toast.error("Inserisci un'aliquota valida (percentuale >= 0).");
+      return;
+    }
+    const label = vatForm.label.trim() || `${vatForm.rate}%`;
+
+    let updated: VatRateOption[];
+    if (editingVat) {
+      updated = currentVatRates.map((vr) => {
+        if (vr.id === editingVat.id) {
+          return {
+            ...vr,
+            rate: vatForm.rate,
+            label,
+            description: vatForm.description.trim(),
+            is_default: vatForm.is_default,
+          };
+        }
+        return vatForm.is_default ? { ...vr, is_default: false } : vr;
+      });
+    } else {
+      const newVat: VatRateOption = {
+        id: `vat_custom_${Date.now()}`,
+        rate: vatForm.rate,
+        label,
+        description: vatForm.description.trim(),
+        is_default: vatForm.is_default,
+      };
+      updated = vatForm.is_default
+        ? [...currentVatRates.map((vr) => ({ ...vr, is_default: false })), newVat]
+        : [...currentVatRates, newVat];
+    }
+
+    updated.sort((a, b) => b.rate - a.rate);
+
+    setForm((prev) => ({
+      ...prev,
+      vat_rates: updated,
+      ...(vatForm.is_default ? { default_vat_rate: vatForm.rate } : {}),
+    }));
+
+    setVatModalOpen(false);
+    toast.success(editingVat ? "Aliquota IVA aggiornata." : "Nuova aliquota IVA aggiunta.");
+  };
+
+  const handleSetDefaultVat = (id: string) => {
+    const target = currentVatRates.find((vr) => vr.id === id);
+    if (!target) return;
+
+    const updated = currentVatRates.map((vr) => ({
+      ...vr,
+      is_default: vr.id === id,
+    }));
+
+    setForm((prev) => ({
+      ...prev,
+      vat_rates: updated,
+      default_vat_rate: target.rate,
+    }));
+    toast.success(`Aliquota ${target.rate}% (${target.label}) impostata come predefinita.`);
+  };
+
+  const handleDeleteVat = (id: string) => {
+    if (currentVatRates.length <= 1) {
+      toast.error("Deve rimanere almeno un'aliquota configurata.");
+      return;
+    }
+    const target = currentVatRates.find((vr) => vr.id === id);
+    if (target?.is_default || form.default_vat_rate === target?.rate) {
+      toast.error(
+        "Non puoi eliminare l'aliquota attualmente impostata come predefinita. Scegline prima un'altra.",
+      );
+      return;
+    }
+
+    const updated = currentVatRates.filter((vr) => vr.id !== id);
+    setForm((prev) => ({
+      ...prev,
+      vat_rates: updated,
+    }));
+    toast.success("Aliquota IVA rimossa.");
+  };
+
+  const handleResetDefaultVat = () => {
+    setForm((prev) => ({
+      ...prev,
+      vat_rates: DEFAULT_VAT_RATES,
+      default_vat_rate: 22,
+    }));
+    toast.success("Aliquote IVA ripristinate ai valori standard italiani.");
+  };
+
+  // ========================================================
+  // GESTIONE UNITÀ DI MISURA (AVANZATE)
+  // ========================================================
+  const currentUnitsOfMeasure = useMemo<UnitOfMeasureOption[]>(() => {
+    if (
+      form.units_of_measure &&
+      Array.isArray(form.units_of_measure) &&
+      form.units_of_measure.length > 0
+    ) {
+      return form.units_of_measure;
+    }
+    return DEFAULT_UNITS_OF_MEASURE;
+  }, [form.units_of_measure]);
+
+  const handleOpenAddUnit = () => {
+    setEditingUnit(null);
+    setUnitForm({
+      code: "",
+      name: "",
+      category: "Quantità",
+      is_default: false,
+    });
+    setUnitModalOpen(true);
+  };
+
+  const handleOpenEditUnit = (item: UnitOfMeasureOption) => {
+    setEditingUnit(item);
+    setUnitForm({
+      code: item.code,
+      name: item.name,
+      category: item.category || "Quantità",
+      is_default: Boolean(item.is_default || form.default_unit_of_measure === item.code),
+    });
+    setUnitModalOpen(true);
+  };
+
+  const handleSaveUnit = () => {
+    const code = unitForm.code.trim();
+    const name = unitForm.name.trim();
+    if (!code) {
+      toast.error("Inserisci la sigla dell'unità di misura (es. pz, ore, m).");
+      return;
+    }
+    if (!name) {
+      toast.error("Inserisci la descrizione dell'unità di misura (es. Pezzi, Ore).");
+      return;
+    }
+
+    let updated: UnitOfMeasureOption[];
+    if (editingUnit) {
+      updated = currentUnitsOfMeasure.map((u) => {
+        if (u.id === editingUnit.id) {
+          return {
+            ...u,
+            code,
+            name,
+            category: unitForm.category.trim(),
+            is_default: unitForm.is_default,
+          };
+        }
+        return unitForm.is_default ? { ...u, is_default: false } : u;
+      });
+    } else {
+      if (currentUnitsOfMeasure.some((u) => u.code.toLowerCase() === code.toLowerCase())) {
+        toast.error(`L'unità di misura "${code}" è già presente nella lista.`);
+        return;
+      }
+      const newUnit: UnitOfMeasureOption = {
+        id: `um_custom_${Date.now()}`,
+        code,
+        name,
+        category: unitForm.category.trim(),
+        is_default: unitForm.is_default,
+      };
+      updated = unitForm.is_default
+        ? [...currentUnitsOfMeasure.map((u) => ({ ...u, is_default: false })), newUnit]
+        : [...currentUnitsOfMeasure, newUnit];
+    }
+
+    setForm((prev) => ({
+      ...prev,
+      units_of_measure: updated,
+      ...(unitForm.is_default ? { default_unit_of_measure: code } : {}),
+    }));
+
+    setUnitModalOpen(false);
+    toast.success(editingUnit ? "Unità di misura aggiornata." : "Nuova unità di misura aggiunta.");
+  };
+
+  const handleSetDefaultUnit = (id: string) => {
+    const target = currentUnitsOfMeasure.find((u) => u.id === id);
+    if (!target) return;
+
+    const updated = currentUnitsOfMeasure.map((u) => ({
+      ...u,
+      is_default: u.id === id,
+    }));
+
+    setForm((prev) => ({
+      ...prev,
+      units_of_measure: updated,
+      default_unit_of_measure: target.code,
+    }));
+    toast.success(`Unità "${target.code}" (${target.name}) impostata come predefinita.`);
+  };
+
+  const handleDeleteUnit = (id: string) => {
+    if (currentUnitsOfMeasure.length <= 1) {
+      toast.error("Deve rimanere almeno un'unità di misura configurata.");
+      return;
+    }
+    const target = currentUnitsOfMeasure.find((u) => u.id === id);
+    if (target?.is_default || form.default_unit_of_measure === target?.code) {
+      toast.error(
+        "Non puoi eliminare l'unità attualmente impostata come predefinita. Scegline prima un'altra.",
+      );
+      return;
+    }
+
+    const updated = currentUnitsOfMeasure.filter((u) => u.id !== id);
+    setForm((prev) => ({
+      ...prev,
+      units_of_measure: updated,
+    }));
+    toast.success("Unità di misura rimossa.");
+  };
+
+  const handleResetDefaultUnits = () => {
+    setForm((prev) => ({
+      ...prev,
+      units_of_measure: DEFAULT_UNITS_OF_MEASURE,
+      default_unit_of_measure: "pz",
+    }));
+    toast.success("Unità di misura ripristinate ai valori standard.");
+  };
+
   const activeSectionInfo = SECTION_MAP[activeTab] || ALL_SECTIONS[0];
 
   return (
@@ -625,7 +957,7 @@ function ImpostazioniPage() {
           <Button
             onClick={handleSaveActiveSettings}
             disabled={saving}
-            className="bg-primary hover:bg-primary/90 text-primary-foreground font-medium px-5 py-2 shadow-xs rounded-lg transition-all animate-in fade-in zoom-in-95 duration-200 cursor-pointer flex items-center gap-2"
+            className="h-9 px-4 sm:px-5 text-xs sm:text-sm bg-primary hover:bg-primary/90 text-primary-foreground font-semibold shadow-xs rounded-lg transition-all animate-in fade-in zoom-in-95 duration-200 cursor-pointer flex items-center gap-2 shrink-0"
           >
             {saving ? (
               <Loader2 className="size-4 animate-spin" />
@@ -1005,7 +1337,7 @@ function ImpostazioniPage() {
                         onChange={(e) =>
                           setForm((prev) => ({ ...prev, company_name: e.target.value }))
                         }
-                        placeholder="INNOVAZIONE TERMICA"
+                        placeholder="Azienda Demo Srl"
                       />
                     </div>
                     <div className="space-y-1.5">
@@ -1018,7 +1350,7 @@ function ImpostazioniPage() {
                         onChange={(e) =>
                           setForm((prev) => ({ ...prev, owner_first_name: e.target.value }))
                         }
-                        placeholder="Maurizio"
+                        placeholder="Mario"
                       />
                     </div>
                     <div className="space-y-1.5">
@@ -1031,7 +1363,7 @@ function ImpostazioniPage() {
                         onChange={(e) =>
                           setForm((prev) => ({ ...prev, owner_last_name: e.target.value }))
                         }
-                        placeholder="Tanforti"
+                        placeholder="Rossi"
                       />
                     </div>
                     <div className="space-y-1.5">
@@ -1044,7 +1376,7 @@ function ImpostazioniPage() {
                         onChange={(e) =>
                           setForm((prev) => ({ ...prev, vat_number: e.target.value }))
                         }
-                        placeholder="IT12345678901"
+                        placeholder="00000000000"
                       />
                     </div>
                     <div className="space-y-1.5">
@@ -1057,7 +1389,7 @@ function ImpostazioniPage() {
                         onChange={(e) =>
                           setForm((prev) => ({ ...prev, fiscal_code: e.target.value }))
                         }
-                        placeholder="TNFMRZ80A01H501U"
+                        placeholder="RSSMRA80A01H501U"
                       />
                     </div>
                     <div className="space-y-1.5 md:col-span-2">
@@ -1112,7 +1444,7 @@ function ImpostazioniPage() {
                         id="phone"
                         value={form.phone}
                         onChange={(e) => setForm((prev) => ({ ...prev, phone: e.target.value }))}
-                        placeholder="3891344474"
+                        placeholder="0000000000"
                       />
                     </div>
                     <div className="space-y-1.5 md:col-span-2">
@@ -1124,7 +1456,7 @@ function ImpostazioniPage() {
                         type="email"
                         value={form.email}
                         onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))}
-                        placeholder="maurizio.tanforti@gmail.com"
+                        placeholder="demo@example.com"
                       />
                     </div>
                   </div>
@@ -1307,12 +1639,10 @@ function ImpostazioniPage() {
                     <TableBody>
                       <TableRow>
                         <TableCell className="pl-4 font-medium">
-                          Maurizio Tanforti{" "}
+                          Mario Rossi{" "}
                           <span className="text-xs text-primary font-semibold ml-1">(Tu)</span>
                         </TableCell>
-                        <TableCell className="text-xs font-mono">
-                          maurizio.tanforti@gmail.com
-                        </TableCell>
+                        <TableCell className="text-xs font-mono">demo@example.com</TableCell>
                         <TableCell>
                           <span className="text-[11px] font-semibold bg-primary/10 text-primary px-2 py-0.5 rounded-full">
                             Amministratore
@@ -1329,9 +1659,7 @@ function ImpostazioniPage() {
                       </TableRow>
                       <TableRow>
                         <TableCell className="pl-4 font-medium">Tecnico Idraulico 1</TableCell>
-                        <TableCell className="text-xs font-mono">
-                          tecnico@innovazionetermica.it
-                        </TableCell>
+                        <TableCell className="text-xs font-mono">tecnico@example.com</TableCell>
                         <TableCell>
                           <span className="text-[11px] font-semibold bg-muted text-foreground px-2 py-0.5 rounded-full">
                             Tecnico sul campo
@@ -1677,6 +2005,37 @@ function ImpostazioniPage() {
                       Verifica account Google Calendar
                     </Button>
                   </div>
+
+                  <div className="rounded-xl border border-border bg-card p-5 space-y-3 md:col-span-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <Smartphone className="size-4 text-primary" />
+                        <h4 className="font-semibold text-sm">
+                          App Mobile & Schermata Home (iOS Standalone)
+                        </h4>
+                      </div>
+                      <span className="text-[11px] font-semibold bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 px-2 py-0.5 rounded-full shrink-0">
+                        PWA Attiva
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      ArtigianoSmart è configurato come Progressive Web App (PWA) con supporto
+                      nativo per la modalità a schermo intero (standalone) su iPhone, iPad e
+                      dispositivi Android.
+                    </p>
+                    <div className="pt-1 flex flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="text-xs gap-1.5"
+                        onClick={() => setIosGuideOpen(true)}
+                      >
+                        <Smartphone className="size-3.5 text-primary" />
+                        Guida installazione su iPhone / iPad
+                      </Button>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
@@ -1685,88 +2044,355 @@ function ImpostazioniPage() {
             {/* SCHEDA 8: AVANZATE                                       */}
             {/* ======================================================== */}
             {activeTab === "avanzate" && (
-              <div className="space-y-6">
+              <div className="space-y-8">
                 <div>
                   <h3 className="text-base font-semibold text-foreground">Impostazioni Avanzate</h3>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Numerazioni, decimali, formati e backup locale dei dati.
+                    Numerazioni, decimali, formati, aliquote IVA, unità di misura e backup locale
+                    dei dati.
                   </p>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-medium">Prefisso Preventivi</Label>
-                    <Input
-                      value={form.quote_prefix}
-                      onChange={(e) =>
-                        setForm((prev) => ({ ...prev, quote_prefix: e.target.value.toUpperCase() }))
-                      }
-                      className="font-mono text-xs uppercase"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-medium">Prefisso Fatture</Label>
-                    <Input
-                      value={form.invoice_prefix}
-                      onChange={(e) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          invoice_prefix: e.target.value.toUpperCase(),
-                        }))
-                      }
-                      className="font-mono text-xs uppercase"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-medium">Prefisso Interventi</Label>
-                    <Input
-                      value={form.intervention_prefix}
-                      onChange={(e) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          intervention_prefix: e.target.value.toUpperCase(),
-                        }))
-                      }
-                      className="font-mono text-xs uppercase"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-medium">Valuta predefinita</Label>
-                    <Input value={form.currency} disabled className="bg-muted text-xs" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-medium">Decimali prezzi (0-4)</Label>
-                    <Input
-                      value={form.price_decimals}
-                      onChange={(e) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          price_decimals: Math.max(0, Math.min(4, Number(e.target.value) || 0)),
-                        }))
-                      }
-                      type="number"
-                      min={0}
-                      max={4}
-                      className="text-xs"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-medium">Validità preventivo (gg)</Label>
-                    <Input
-                      value={form.quote_validity_days}
-                      onChange={(e) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          quote_validity_days: Math.max(1, Number(e.target.value) || 30),
-                        }))
-                      }
-                      type="number"
-                      min={1}
-                      className="text-xs"
-                    />
+                {/* 1. Numerazioni e Formati */}
+                <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+                  <h4 className="font-semibold text-sm text-foreground flex items-center gap-2">
+                    <SlidersHorizontal className="size-4 text-primary" />
+                    <span>Numerazioni e Formati Base</span>
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-medium">Prefisso Preventivi</Label>
+                      <Input
+                        value={form.quote_prefix}
+                        onChange={(e) =>
+                          setForm((prev) => ({
+                            ...prev,
+                            quote_prefix: e.target.value.toUpperCase(),
+                          }))
+                        }
+                        className="font-mono text-xs uppercase"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-medium">Prefisso Fatture</Label>
+                      <Input
+                        value={form.invoice_prefix}
+                        onChange={(e) =>
+                          setForm((prev) => ({
+                            ...prev,
+                            invoice_prefix: e.target.value.toUpperCase(),
+                          }))
+                        }
+                        className="font-mono text-xs uppercase"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-medium">Prefisso Interventi</Label>
+                      <Input
+                        value={form.intervention_prefix}
+                        onChange={(e) =>
+                          setForm((prev) => ({
+                            ...prev,
+                            intervention_prefix: e.target.value.toUpperCase(),
+                          }))
+                        }
+                        className="font-mono text-xs uppercase"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-medium">Valuta predefinita</Label>
+                      <Input value={form.currency} disabled className="bg-muted text-xs" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-medium">Decimali prezzi (0-4)</Label>
+                      <Input
+                        value={form.price_decimals}
+                        onChange={(e) =>
+                          setForm((prev) => ({
+                            ...prev,
+                            price_decimals: Math.max(0, Math.min(4, Number(e.target.value) || 0)),
+                          }))
+                        }
+                        type="number"
+                        min={0}
+                        max={4}
+                        className="text-xs"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-medium">Validità preventivo (gg)</Label>
+                      <Input
+                        value={form.quote_validity_days}
+                        onChange={(e) =>
+                          setForm((prev) => ({
+                            ...prev,
+                            quote_validity_days: Math.max(1, Number(e.target.value) || 30),
+                          }))
+                        }
+                        type="number"
+                        min={1}
+                        className="text-xs"
+                      />
+                    </div>
                   </div>
                 </div>
 
+                {/* 2. Gestione Aliquote IVA */}
+                <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <h4 className="font-semibold text-sm text-foreground flex items-center gap-2">
+                        <Percent className="size-4 text-primary" />
+                        <span>Aliquote IVA</span>
+                      </h4>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Configura le aliquote utilizzate nei documenti. Quella predefinita viene
+                        applicata automaticamente a ogni nuovo documento.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleResetDefaultVat}
+                        className="h-8 text-xs gap-1.5 cursor-pointer"
+                        title="Ripristina preset standard (22%, 10%, 4%, 5%, 0%)"
+                      >
+                        <RotateCcw className="size-3.5" />
+                        <span>Ripristina standard</span>
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={handleOpenAddVat}
+                        className="h-8 text-xs gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer"
+                      >
+                        <Plus className="size-3.5" />
+                        <span>Nuova aliquota</span>
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-border overflow-hidden">
+                    <Table>
+                      <TableHeader className="bg-muted/40">
+                        <TableRow>
+                          <TableHead className="w-24 font-semibold text-xs py-2.5">
+                            Aliquota
+                          </TableHead>
+                          <TableHead className="font-semibold text-xs py-2.5">
+                            Nome / Etichetta
+                          </TableHead>
+                          <TableHead className="font-semibold text-xs py-2.5 hidden md:table-cell">
+                            Descrizione / Riferimento
+                          </TableHead>
+                          <TableHead className="w-36 font-semibold text-xs py-2.5 text-center">
+                            Predefinita
+                          </TableHead>
+                          <TableHead className="w-24 font-semibold text-xs py-2.5 text-right">
+                            Azioni
+                          </TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {currentVatRates.map((vr) => {
+                          const isDefault =
+                            vr.is_default || Number(form.default_vat_rate) === Number(vr.rate);
+                          return (
+                            <TableRow key={vr.id} className="hover:bg-muted/20">
+                              <TableCell className="py-2.5 font-mono font-bold text-sm text-foreground">
+                                {vr.rate}%
+                              </TableCell>
+                              <TableCell className="py-2.5 font-medium text-xs text-foreground">
+                                {vr.label}
+                              </TableCell>
+                              <TableCell className="py-2.5 text-xs text-muted-foreground hidden md:table-cell">
+                                {vr.description || "—"}
+                              </TableCell>
+                              <TableCell className="py-2.5 text-center">
+                                {isDefault ? (
+                                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 bg-emerald-500/10 px-2 py-0.5 rounded-full">
+                                    <CheckCircle2 className="size-3" />
+                                    Predefinita
+                                  </span>
+                                ) : (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleSetDefaultVat(vr.id)}
+                                    className="h-6 px-2 text-[11px] text-muted-foreground hover:text-foreground cursor-pointer"
+                                  >
+                                    Imposta predefinita
+                                  </Button>
+                                )}
+                              </TableCell>
+                              <TableCell className="py-2.5 text-right">
+                                <div className="flex items-center justify-end gap-1">
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => handleOpenEditVat(vr)}
+                                    className="size-7 text-muted-foreground hover:text-foreground cursor-pointer"
+                                    title="Modifica aliquota"
+                                  >
+                                    <Pencil className="size-3.5" />
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => handleDeleteVat(vr.id)}
+                                    disabled={isDefault}
+                                    className="size-7 text-muted-foreground hover:text-destructive disabled:opacity-30 cursor-pointer"
+                                    title={
+                                      isDefault
+                                        ? "Non puoi eliminare l'aliquota predefinita"
+                                        : "Elimina aliquota"
+                                    }
+                                  >
+                                    <Trash2 className="size-3.5" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+
+                {/* 3. Gestione Unità di Misura */}
+                <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <h4 className="font-semibold text-sm text-foreground flex items-center gap-2">
+                        <Ruler className="size-4 text-primary" />
+                        <span>Unità di Misura</span>
+                      </h4>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Definisci le unità di misura utilizzate nelle righe dei documenti e nel
+                        catalogo articoli (es. pezzi, ore, metri, corpo).
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleResetDefaultUnits}
+                        className="h-8 text-xs gap-1.5 cursor-pointer"
+                        title="Ripristina unità standard artigiani"
+                      >
+                        <RotateCcw className="size-3.5" />
+                        <span>Ripristina standard</span>
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={handleOpenAddUnit}
+                        className="h-8 text-xs gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer"
+                      >
+                        <Plus className="size-3.5" />
+                        <span>Nuova unità</span>
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-border overflow-hidden">
+                    <Table>
+                      <TableHeader className="bg-muted/40">
+                        <TableRow>
+                          <TableHead className="w-24 font-semibold text-xs py-2.5">Sigla</TableHead>
+                          <TableHead className="font-semibold text-xs py-2.5">
+                            Descrizione
+                          </TableHead>
+                          <TableHead className="font-semibold text-xs py-2.5 hidden sm:table-cell">
+                            Ambito / Categoria
+                          </TableHead>
+                          <TableHead className="w-36 font-semibold text-xs py-2.5 text-center">
+                            Predefinita
+                          </TableHead>
+                          <TableHead className="w-24 font-semibold text-xs py-2.5 text-right">
+                            Azioni
+                          </TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {currentUnitsOfMeasure.map((u) => {
+                          const isDefault = u.is_default || form.default_unit_of_measure === u.code;
+                          return (
+                            <TableRow key={u.id} className="hover:bg-muted/20">
+                              <TableCell className="py-2.5">
+                                <span className="font-mono font-bold text-xs uppercase px-2 py-0.5 rounded-md bg-muted text-foreground border border-border/60">
+                                  {u.code}
+                                </span>
+                              </TableCell>
+                              <TableCell className="py-2.5 font-medium text-xs text-foreground">
+                                {u.name}
+                              </TableCell>
+                              <TableCell className="py-2.5 text-xs text-muted-foreground hidden sm:table-cell">
+                                {u.category || "Generale"}
+                              </TableCell>
+                              <TableCell className="py-2.5 text-center">
+                                {isDefault ? (
+                                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 bg-emerald-500/10 px-2 py-0.5 rounded-full">
+                                    <CheckCircle2 className="size-3" />
+                                    Predefinita
+                                  </span>
+                                ) : (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleSetDefaultUnit(u.id)}
+                                    className="h-6 px-2 text-[11px] text-muted-foreground hover:text-foreground cursor-pointer"
+                                  >
+                                    Imposta predefinita
+                                  </Button>
+                                )}
+                              </TableCell>
+                              <TableCell className="py-2.5 text-right">
+                                <div className="flex items-center justify-end gap-1">
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => handleOpenEditUnit(u)}
+                                    className="size-7 text-muted-foreground hover:text-foreground cursor-pointer"
+                                    title="Modifica unità"
+                                  >
+                                    <Pencil className="size-3.5" />
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => handleDeleteUnit(u.id)}
+                                    disabled={isDefault}
+                                    className="size-7 text-muted-foreground hover:text-destructive disabled:opacity-30 cursor-pointer"
+                                    title={
+                                      isDefault
+                                        ? "Non puoi eliminare l'unità predefinita"
+                                        : "Elimina unità"
+                                    }
+                                  >
+                                    <Trash2 className="size-3.5" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+
+                {/* 4. Esporta archivio completo */}
                 <div className="pt-4 border-t border-border flex items-center justify-between">
                   <div>
                     <p className="text-xs font-semibold">Esporta archivio completo</p>
@@ -1789,7 +2415,7 @@ function ImpostazioniPage() {
                       const url = URL.createObjectURL(blob);
                       const a = document.createElement("a");
                       a.href = url;
-                      a.download = `backup_innovazione_termica_${new Date().toISOString().slice(0, 10)}.json`;
+                      a.download = `backup_azienda_demo_${new Date().toISOString().slice(0, 10)}.json`;
                       a.click();
                       toast.success("Backup scaricato con successo.");
                     }}
@@ -1869,7 +2495,7 @@ function ImpostazioniPage() {
                       </Button>
                     </div>
                     <p className="text-xs font-mono text-muted-foreground bg-muted p-2 rounded">
-                      {typeof window !== "undefined" ? window.location.origin : ""}
+                      {origin}
                       /preventivo-online/:token
                     </p>
                   </div>
@@ -1882,9 +2508,8 @@ function ImpostazioniPage() {
                         size="sm"
                         className="text-xs gap-1"
                         onClick={() => {
-                          navigator.clipboard?.writeText(
-                            window.location.origin + "/stato-intervento",
-                          );
+                          const base = typeof window !== "undefined" ? window.location.origin : "";
+                          navigator.clipboard?.writeText(base + "/stato-intervento");
                           toast.success("Link copiato negli appunti.");
                         }}
                       >
@@ -1892,7 +2517,7 @@ function ImpostazioniPage() {
                       </Button>
                     </div>
                     <p className="text-xs font-mono text-muted-foreground bg-muted p-2 rounded">
-                      {typeof window !== "undefined" ? window.location.origin : ""}
+                      {origin}
                       /stato-intervento/:id
                     </p>
                   </div>
@@ -1969,7 +2594,7 @@ function ImpostazioniPage() {
                 onChange={(e) =>
                   setPaymentForm((prev) => ({ ...prev, iban: e.target.value.toUpperCase() }))
                 }
-                placeholder="IT20X0878773190000000070774"
+                placeholder="IT00X0000000000000000000000"
                 className="font-mono text-xs uppercase"
               />
             </div>
@@ -1996,13 +2621,213 @@ function ImpostazioniPage() {
             <Button
               type="button"
               onClick={handleSavePaymentMethod}
-              className="bg-[#22c55e] hover:bg-[#16a34a] text-white font-medium"
+              className="bg-[#22c55e] hover:bg-[#16a34a] text-white font-medium cursor-pointer"
             >
               Salva
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* DIALOG NUOVA / MODIFICA ALIQUOTA IVA */}
+      <Dialog open={vatModalOpen} onOpenChange={setVatModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base flex items-center gap-2">
+              <Percent className="size-4 text-primary" />
+              <span>{editingVat ? "Modifica aliquota IVA" : "Nuova aliquota IVA"}</span>
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="vat_rate_val" className="text-xs font-medium">
+                Percentuale Aliquota (%) *
+              </Label>
+              <Input
+                id="vat_rate_val"
+                type="number"
+                min={0}
+                max={100}
+                step="any"
+                value={vatForm.rate}
+                onChange={(e) =>
+                  setVatForm((prev) => ({
+                    ...prev,
+                    rate: parseFloat(e.target.value) || 0,
+                  }))
+                }
+                placeholder="22"
+                className="font-mono text-xs"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="vat_label_val" className="text-xs font-medium">
+                Nome / Etichetta visualizzata *
+              </Label>
+              <Input
+                id="vat_label_val"
+                value={vatForm.label}
+                onChange={(e) => setVatForm((prev) => ({ ...prev, label: e.target.value }))}
+                placeholder="Es. Ordinaria 22% o Ridotta Edilizia 10%"
+                className="text-xs"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="vat_desc_val" className="text-xs font-medium">
+                Descrizione / Riferimento normativo (opzionale)
+              </Label>
+              <Input
+                id="vat_desc_val"
+                value={vatForm.description}
+                onChange={(e) => setVatForm((prev) => ({ ...prev, description: e.target.value }))}
+                placeholder="Es. Ristrutturazioni edilizie / Art. 10 DPR 633/72"
+                className="text-xs"
+              />
+            </div>
+
+            <div className="flex items-center space-x-2 pt-2 border-t border-border">
+              <Checkbox
+                id="vat_default_val"
+                checked={vatForm.is_default}
+                onCheckedChange={(checked) =>
+                  setVatForm((prev) => ({ ...prev, is_default: Boolean(checked) }))
+                }
+              />
+              <Label htmlFor="vat_default_val" className="text-xs font-medium cursor-pointer">
+                Imposta come aliquota predefinita per tutti i nuovi documenti
+              </Label>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setVatModalOpen(false)}
+              className="cursor-pointer"
+            >
+              Annulla
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleSaveVat}
+              className="bg-primary text-primary-foreground hover:bg-primary/90 font-medium cursor-pointer"
+            >
+              Salva aliquota
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* DIALOG NUOVA / MODIFICA UNITÀ DI MISURA */}
+      <Dialog open={unitModalOpen} onOpenChange={setUnitModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base flex items-center gap-2">
+              <Ruler className="size-4 text-primary" />
+              <span>{editingUnit ? "Modifica unità di misura" : "Nuova unità di misura"}</span>
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="um_code_val" className="text-xs font-medium">
+                  Sigla / Simbolo *
+                </Label>
+                <Input
+                  id="um_code_val"
+                  value={unitForm.code}
+                  onChange={(e) =>
+                    setUnitForm((prev) => ({ ...prev, code: e.target.value.toLowerCase().trim() }))
+                  }
+                  placeholder="pz, ore, m, kg"
+                  className="font-mono text-xs uppercase"
+                  maxLength={10}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="um_category_val" className="text-xs font-medium">
+                  Tipologia / Ambito
+                </Label>
+                <Select
+                  value={unitForm.category}
+                  onValueChange={(val) => setUnitForm((prev) => ({ ...prev, category: val }))}
+                >
+                  <SelectTrigger id="um_category_val" className="h-9 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Quantità">Quantità</SelectItem>
+                    <SelectItem value="Tempo">Tempo</SelectItem>
+                    <SelectItem value="Prestazione">Prestazione</SelectItem>
+                    <SelectItem value="Lunghezza">Lunghezza</SelectItem>
+                    <SelectItem value="Superficie">Superficie</SelectItem>
+                    <SelectItem value="Volume">Volume</SelectItem>
+                    <SelectItem value="Peso">Peso</SelectItem>
+                    <SelectItem value="Assieme">Assieme</SelectItem>
+                    <SelectItem value="Altro">Altro</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="um_name_val" className="text-xs font-medium">
+                Descrizione estesa *
+              </Label>
+              <Input
+                id="um_name_val"
+                value={unitForm.name}
+                onChange={(e) => setUnitForm((prev) => ({ ...prev, name: e.target.value }))}
+                placeholder="Es. Pezzo / Pezzi, Ore lavorative..."
+                className="text-xs"
+              />
+            </div>
+
+            <div className="flex items-center space-x-2 pt-2 border-t border-border">
+              <Checkbox
+                id="um_default_val"
+                checked={unitForm.is_default}
+                onCheckedChange={(checked) =>
+                  setUnitForm((prev) => ({ ...prev, is_default: Boolean(checked) }))
+                }
+              />
+              <Label htmlFor="um_default_val" className="text-xs font-medium cursor-pointer">
+                Imposta come unità di misura predefinita per le nuove voci
+              </Label>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setUnitModalOpen(false)}
+              className="cursor-pointer"
+            >
+              Annulla
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleSaveUnit}
+              className="bg-primary text-primary-foreground hover:bg-primary/90 font-medium cursor-pointer"
+            >
+              Salva unità
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <IOSInstallGuideModal open={iosGuideOpen} onOpenChange={setIosGuideOpen} />
     </AppLayout>
   );
 }

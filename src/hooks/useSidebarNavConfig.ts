@@ -117,7 +117,7 @@ function loadConfig(): NavItemConfig[] {
     let raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
       // Controlla e migra eventuale vecchia chiave
-      const legacyRaw = localStorage.getItem("innovazione_termica_sidebar_nav_v1");
+      const legacyRaw = localStorage.getItem("demo_sidebar_nav_v1");
       if (legacyRaw) {
         try {
           const parsedLegacy = JSON.parse(legacyRaw) as Partial<NavItemConfig>[];

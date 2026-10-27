@@ -23,6 +23,7 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { AppLayout } from "@/components/AppLayout";
+import { KPISummaryCard } from "@/components/KPISummaryCard";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -64,12 +65,12 @@ import type { DocTemplate } from "@/lib/doc";
 export const Route = createFileRoute("/_authenticated/preventivi")({
   head: () => ({
     meta: [
-      { title: "Preventivi — INNOVAZIONE TERMICA" },
+      { title: "Preventivi — Azienda Demo Srl" },
       {
         name: "description",
         content: "Gestione offerte e preventivi con anteprima PDF, stampa e invio.",
       },
-      { property: "og:title", content: "Preventivi — INNOVAZIONE TERMICA" },
+      { property: "og:title", content: "Preventivi — Azienda Demo Srl" },
       {
         property: "og:description",
         content: "Preventivi con anteprima PDF e invio WhatsApp in tempo reale.",
@@ -140,7 +141,7 @@ function PreventiviPage() {
       number,
       date: data.date,
       secondary_date: data.valid_until,
-      items: [emptyItem()],
+      items: [emptyItem(company.data?.default_unit_of_measure || "pz")],
       vat_rate: Number(company.data?.default_vat_rate || 22),
       notes: defaultNotes,
       status: "bozza",
@@ -191,7 +192,9 @@ function PreventiviPage() {
       number: q.number,
       date: q.date,
       secondary_date: q.valid_until,
-      items: (q.items && q.items.length > 0 ? q.items : [emptyItem()]) as any,
+      items: (q.items && q.items.length > 0
+        ? q.items
+        : [emptyItem(company.data?.default_unit_of_measure || "pz")]) as any,
       vat_rate: Number(q.vat_rate || company.data?.default_vat_rate || 22),
       notes: q.notes || "",
       body: q.body || "",
@@ -395,7 +398,7 @@ function PreventiviPage() {
     }
 
     const totalFmt = formatCurrency(Number(q?.total || 0));
-    const msg = `Salve ${clientName || ""}, le invio i dettagli del preventivo ${q?.number || ""} di ${totalFmt}. Restiamo a disposizione per qualsiasi chiarimento. — Innovazione Termica`;
+    const msg = `Salve ${clientName || ""}, le invio i dettagli del preventivo ${q?.number || ""} di ${totalFmt}. Restiamo a disposizione per qualsiasi chiarimento. — Azienda Demo Srl`;
 
     const url = `https://wa.me/${clean}?text=${encodeURIComponent(msg)}`;
     window.open(url, "_blank", "noopener,noreferrer");
@@ -588,7 +591,7 @@ function PreventiviPage() {
       actions={
         <Button
           onClick={handleOpenQuickCreate}
-          className="bg-primary hover:bg-primary/90 text-primary-foreground font-medium px-2.5 sm:px-4 py-2 shadow-xs rounded-lg gap-1.5 shrink-0"
+          className="h-9 px-3 sm:px-4 text-xs sm:text-sm bg-primary hover:bg-primary/90 text-primary-foreground font-semibold shadow-xs rounded-lg gap-1.5 shrink-0 cursor-pointer"
         >
           <div className="flex items-center gap-1">
             <Plus className="size-3.5 stroke-[2.5]" />
@@ -601,96 +604,43 @@ function PreventiviPage() {
     >
       <div className="space-y-5">
         {/* Quick KPI Overview */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-          <button
-            type="button"
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 w-full min-w-0">
+          <KPISummaryCard
+            label="Tutti i preventivi"
+            value={countsByStatus.all}
+            hint={formatCurrency(totalValue)}
+            icon={FileText}
+            tone="primary"
+            isActive={statusFilter === "all"}
             onClick={() => setStatusFilter("all")}
-            className={`rounded-xl border p-3.5 sm:p-4 text-left transition-all bg-card shadow-xs flex flex-col justify-between min-h-[96px] sm:min-h-[104px] ${
-              statusFilter === "all"
-                ? "border-primary ring-1 ring-primary/20 shadow-xs"
-                : "border-border hover:bg-muted/30"
-            }`}
-          >
-            <div className="flex items-center justify-between text-muted-foreground">
-              <span className="text-xs font-medium">Tutti i preventivi</span>
-              <FileText className="size-4 text-primary" />
-            </div>
-            <div>
-              <p className="text-xl sm:text-2xl font-bold text-foreground font-mono tabular-nums mt-1">
-                {countsByStatus.all}
-              </p>
-              <p className="text-[11px] sm:text-xs text-muted-foreground/80 mt-0.5 truncate">
-                {formatCurrency(totalValue)}
-              </p>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setStatusFilter("bozza")}
-            className={`rounded-xl border p-3.5 sm:p-4 text-left transition-all bg-card shadow-xs flex flex-col justify-between min-h-[96px] sm:min-h-[104px] ${
-              statusFilter === "bozza"
-                ? "border-primary ring-1 ring-primary/20 shadow-xs"
-                : "border-border hover:bg-muted/30"
-            }`}
-          >
-            <div className="flex items-center justify-between text-muted-foreground">
-              <span className="text-xs font-medium">In Bozza</span>
-              <FileText className="size-4 text-muted-foreground" />
-            </div>
-            <div>
-              <p className="text-xl sm:text-2xl font-bold text-foreground font-mono tabular-nums mt-1">
-                {countsByStatus.bozza}
-              </p>
-              <p className="text-[11px] sm:text-xs text-muted-foreground mt-0.5">In preparazione</p>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setStatusFilter("inviato")}
-            className={`rounded-xl border p-3.5 sm:p-4 text-left transition-all bg-card shadow-xs flex flex-col justify-between min-h-[96px] sm:min-h-[104px] ${
-              statusFilter === "inviato"
-                ? "border-blue-500 ring-1 ring-blue-500/20 shadow-xs"
-                : "border-border hover:bg-muted/30"
-            }`}
-          >
-            <div className="flex items-center justify-between text-blue-600 dark:text-blue-400">
-              <span className="text-xs font-medium">Inviati</span>
-              <Clock className="size-4" />
-            </div>
-            <div>
-              <p className="text-xl sm:text-2xl font-bold text-foreground font-mono tabular-nums mt-1">
-                {countsByStatus.inviato}
-              </p>
-              <p className="text-[11px] sm:text-xs text-blue-600/80 dark:text-blue-400/80 mt-0.5">
-                In attesa risposta
-              </p>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setStatusFilter("accettato")}
-            className={`rounded-xl border p-3.5 sm:p-4 text-left transition-all bg-card shadow-xs flex flex-col justify-between min-h-[96px] sm:min-h-[104px] ${
-              statusFilter === "accettato"
-                ? "border-emerald-500 ring-1 ring-emerald-500/20 shadow-xs"
-                : "border-border hover:bg-muted/30"
-            }`}
-          >
-            <div className="flex items-center justify-between text-emerald-600 dark:text-emerald-400">
-              <span className="text-xs font-medium">Accettati</span>
-              <CheckCircle2 className="size-4" />
-            </div>
-            <div>
-              <p className="text-xl sm:text-2xl font-bold text-foreground font-mono tabular-nums mt-1">
-                {countsByStatus.accettato}
-              </p>
-              <p className="text-[11px] sm:text-xs text-emerald-600/80 dark:text-emerald-400/80 mt-0.5">
-                Confermati
-              </p>
-            </div>
-          </button>
+          />
+          <KPISummaryCard
+            label="In Bozza"
+            value={countsByStatus.bozza}
+            hint="In preparazione"
+            icon={FileText}
+            tone="muted"
+            isActive={statusFilter === "bozza"}
+            onClick={() => setStatusFilter(statusFilter === "bozza" ? "all" : "bozza")}
+          />
+          <KPISummaryCard
+            label="Inviati"
+            value={countsByStatus.inviato}
+            hint="In attesa risposta"
+            icon={Clock}
+            tone="blue"
+            isActive={statusFilter === "inviato"}
+            onClick={() => setStatusFilter(statusFilter === "inviato" ? "all" : "inviato")}
+          />
+          <KPISummaryCard
+            label="Accettati"
+            value={countsByStatus.accettato}
+            hint="Confermati"
+            icon={CheckCircle2}
+            tone="emerald"
+            isActive={statusFilter === "accettato"}
+            onClick={() => setStatusFilter(statusFilter === "accettato" ? "all" : "accettato")}
+          />
         </div>
 
         {/* Card Contenitore Principale con Tabella e Filtri (integrata identica a interventi, fatture e clienti) */}

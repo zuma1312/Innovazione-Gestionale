@@ -27,6 +27,7 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { AppLayout } from "@/components/AppLayout";
+import { KPISummaryCard } from "@/components/KPISummaryCard";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -68,12 +69,12 @@ import type { DocItem, DocTemplate } from "@/lib/doc";
 export const Route = createFileRoute("/_authenticated/interventi")({
   head: () => ({
     meta: [
-      { title: "Interventi — INNOVAZIONE TERMICA" },
+      { title: "Interventi — Azienda Demo Srl" },
       {
         name: "description",
         content: "Rapportini di intervento con PDF, stampa e invio.",
       },
-      { property: "og:title", content: "Interventi — INNOVAZIONE TERMICA" },
+      { property: "og:title", content: "Interventi — Azienda Demo Srl" },
       {
         property: "og:description",
         content: "Rapporti di lavoro, manutenzioni e pronto intervento idraulico.",
@@ -137,11 +138,13 @@ function InterventiPage() {
         description: `Manodopera (${row.hours ?? 1} h)`,
         qty: Number(row.hours ?? 1),
         unit_price: Number(row.hourly_rate ?? 35),
+        unit: "ore",
       },
       {
         description: "Materiali e ricambi impiegati",
         qty: 1,
         unit_price: Number(row.materials_cost ?? 0),
+        unit: "corpo",
       },
     ];
   };
@@ -171,6 +174,7 @@ function InterventiPage() {
         description: "Manodopera tecnica specializzata (1 h)",
         qty: 1,
         unit_price: 45,
+        unit: "ore",
       },
     ];
 
@@ -189,7 +193,7 @@ function InterventiPage() {
       title: data.title,
       body: "",
       cantiere: data.cantiere,
-      technician: data.technician || "Maurizio Tanforti",
+      technician: data.technician || "Mario Rossi",
       payment_method_id: defaultMethod?.id,
       payment_method: defaultMethod?.typeLabel,
       payment_iban: defaultMethod?.iban ?? "",
@@ -280,7 +284,7 @@ function InterventiPage() {
       title: row.title || "",
       body: row.description || row.body || "",
       cantiere: row.cantiere || "",
-      technician: row.technician || "Maurizio Tanforti",
+      technician: row.technician || "Mario Rossi",
       payment_method_id: row.payment_method_id,
       payment_method: row.payment_method,
       payment_iban: row.payment_iban,
@@ -307,7 +311,7 @@ function InterventiPage() {
       title: row.title ? `${row.title} (Copia)` : `Intervento ${newNumber}`,
       body: row.description || row.body || "",
       cantiere: row.cantiere || "",
-      technician: row.technician || "Maurizio Tanforti",
+      technician: row.technician || "Mario Rossi",
       payment_method_id: row.payment_method_id || defaultMethod?.id,
       payment_method: row.payment_method || defaultMethod?.typeLabel,
       payment_iban: row.payment_iban ?? defaultMethod?.iban ?? "",
@@ -484,7 +488,7 @@ function InterventiPage() {
     }
 
     const totalFmt = formatCurrency(calculateTotal(row));
-    const msg = `Salve ${clientName || ""}, vi contattiamo da Innovazione Termica in merito all'intervento ${row.number || ""}: ${row.title || row.description || ""} (${totalFmt}). Restiamo a disposizione per qualsiasi informazione.`;
+    const msg = `Salve ${clientName || ""}, vi contattiamo da Azienda Demo Srl in merito all'intervento ${row.number || ""}: ${row.title || row.description || ""} (${totalFmt}). Restiamo a disposizione per qualsiasi informazione.`;
 
     const url = `https://wa.me/${clean}?text=${encodeURIComponent(msg)}`;
     window.open(url, "_blank", "noopener,noreferrer");
@@ -687,7 +691,7 @@ function InterventiPage() {
       actions={
         <Button
           onClick={handleOpenQuickCreate}
-          className="bg-primary hover:bg-primary/90 text-primary-foreground font-medium px-2.5 sm:px-4 py-2 shadow-xs rounded-lg gap-1.5 shrink-0"
+          className="h-9 px-3 sm:px-4 text-xs sm:text-sm bg-primary hover:bg-primary/90 text-primary-foreground font-semibold shadow-xs rounded-lg gap-1.5 shrink-0 cursor-pointer"
         >
           <div className="flex items-center gap-1">
             <Plus className="size-3.5 stroke-[2.5]" />
@@ -700,98 +704,43 @@ function InterventiPage() {
     >
       <div className="space-y-5">
         {/* Indicatori Rapidi (KPI Cards interattive) */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-          <button
-            type="button"
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 w-full min-w-0">
+          <KPISummaryCard
+            label="Totale interventi"
+            value={stats.total}
+            hint={`Valore stimato ${formatCurrency(stats.totalValue)}`}
+            icon={Wrench}
+            tone="primary"
+            isActive={statusFilter === "all"}
             onClick={() => setStatusFilter("all")}
-            className={`rounded-xl border p-3.5 sm:p-4 text-left transition-all bg-card shadow-xs flex flex-col justify-between min-h-[96px] sm:min-h-[104px] ${
-              statusFilter === "all"
-                ? "border-primary ring-1 ring-primary/20 shadow-xs"
-                : "border-border hover:bg-muted/30"
-            }`}
-          >
-            <div className="flex items-center justify-between text-muted-foreground">
-              <span className="text-xs font-medium">Totale interventi</span>
-              <Wrench className="size-4 text-primary" />
-            </div>
-            <div>
-              <p className="text-xl sm:text-2xl font-bold text-foreground font-mono tabular-nums mt-1">
-                {stats.total}
-              </p>
-              <p className="text-[11px] sm:text-xs text-muted-foreground/80 mt-0.5 truncate">
-                Valore stimato {formatCurrency(stats.totalValue)}
-              </p>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setStatusFilter("aperto")}
-            className={`rounded-xl border p-3.5 sm:p-4 text-left transition-all bg-card shadow-xs flex flex-col justify-between min-h-[96px] sm:min-h-[104px] ${
-              statusFilter === "aperto"
-                ? "border-amber-500 ring-1 ring-amber-500/20 shadow-xs"
-                : "border-border hover:bg-muted/30"
-            }`}
-          >
-            <div className="flex items-center justify-between text-muted-foreground">
-              <span className="text-xs font-medium">Da eseguire</span>
-              <Clock className="size-4 text-amber-500" />
-            </div>
-            <div>
-              <p className="text-xl sm:text-2xl font-bold text-amber-600 dark:text-amber-400 font-mono tabular-nums mt-1">
-                {stats.aperti}
-              </p>
-              <p className="text-[11px] sm:text-xs text-muted-foreground/80 mt-0.5 truncate">
-                Interventi aperti
-              </p>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setStatusFilter("in corso")}
-            className={`rounded-xl border p-3.5 sm:p-4 text-left transition-all bg-card shadow-xs flex flex-col justify-between min-h-[96px] sm:min-h-[104px] ${
-              statusFilter === "in corso"
-                ? "border-blue-500 ring-1 ring-blue-500/20 shadow-xs"
-                : "border-border hover:bg-muted/30"
-            }`}
-          >
-            <div className="flex items-center justify-between text-muted-foreground">
-              <span className="text-xs font-medium">In lavorazione</span>
-              <Wrench className="size-4 text-blue-500" />
-            </div>
-            <div>
-              <p className="text-xl sm:text-2xl font-bold text-blue-600 dark:text-blue-400 font-mono tabular-nums mt-1">
-                {stats.inCorso}
-              </p>
-              <p className="text-[11px] sm:text-xs text-muted-foreground/80 mt-0.5 truncate">
-                In corso sui cantieri
-              </p>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setStatusFilter("completato")}
-            className={`rounded-xl border p-3.5 sm:p-4 text-left transition-all bg-card shadow-xs flex flex-col justify-between min-h-[96px] sm:min-h-[104px] ${
-              statusFilter === "completato"
-                ? "border-emerald-500 ring-1 ring-emerald-500/20 shadow-xs"
-                : "border-border hover:bg-muted/30"
-            }`}
-          >
-            <div className="flex items-center justify-between text-muted-foreground">
-              <span className="text-xs font-medium">Completati</span>
-              <CheckCircle2 className="size-4 text-emerald-500" />
-            </div>
-            <div>
-              <p className="text-xl sm:text-2xl font-bold text-emerald-600 dark:text-emerald-400 font-mono tabular-nums mt-1">
-                {stats.completati}
-              </p>
-              <p className="text-[11px] sm:text-xs text-muted-foreground/80 mt-0.5 truncate">
-                Pronti per fatturazione
-              </p>
-            </div>
-          </button>
+          />
+          <KPISummaryCard
+            label="Da eseguire"
+            value={stats.aperti}
+            hint="Interventi aperti"
+            icon={Clock}
+            tone="amber"
+            isActive={statusFilter === "aperto"}
+            onClick={() => setStatusFilter(statusFilter === "aperto" ? "all" : "aperto")}
+          />
+          <KPISummaryCard
+            label="In lavorazione"
+            value={stats.inCorso}
+            hint="In corso sui cantieri"
+            icon={Wrench}
+            tone="blue"
+            isActive={statusFilter === "in corso"}
+            onClick={() => setStatusFilter(statusFilter === "in corso" ? "all" : "in corso")}
+          />
+          <KPISummaryCard
+            label="Completati"
+            value={stats.completati}
+            hint="Pronti per fatturazione"
+            icon={CheckCircle2}
+            tone="emerald"
+            isActive={statusFilter === "completato"}
+            onClick={() => setStatusFilter(statusFilter === "completato" ? "all" : "completato")}
+          />
         </div>
 
         {/* Card Contenitore Principale con Tabella e Filtri */}

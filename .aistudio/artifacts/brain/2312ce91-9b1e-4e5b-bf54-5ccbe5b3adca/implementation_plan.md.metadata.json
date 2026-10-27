@@ -1,0 +1,6 @@
+{
+  "summary":  "Piano di implementazione per la gestione avanzata delle Sezioni e delle Voci nei Preventivi:\n1. Aggiunta del menu a tendina \"Aggiungi sezione\" con le 8 categorie predefinite dagli screenshot più opzione personalizzata.\n2. Raggruppamento visivo delle voci per sezione con intestazioni dedicate, pulsante \"+ Voce\" rapido, riordinamento sezioni e cancellazione.\n3. Card della voce preventivo con campi completi: Descrizione, Quantità, Unità, Prezzo unitario, Sconto %, IVA %, Totale calcolato, Tipo e selettore Sezione.\n4. Barra azioni per ciascuna voce: Sposta Su (↑), Sposta Giù (↓), Duplica Voce (copia identica immediata) ed Elimina (🗑️).\n5. Integrazione nell'anteprima e stampa PDF con intestazioni di sezione pulite e senza subtotali parziali.",
+  "updatedAt":  "2026-10-23T17:53:10.447020325Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}

@@ -50,7 +50,7 @@ export function InterventoQuickCreateModal({
   const [title, setTitle] = useState<string>("");
   const [cantiere, setCantiere] = useState<string>("");
   const [date, setDate] = useState<string>(todayStr);
-  const [technician, setTechnician] = useState<string>("Maurizio Tanforti");
+  const [technician, setTechnician] = useState<string>("Mario Rossi");
 
   useEffect(() => {
     if (open) {
@@ -58,7 +58,7 @@ export function InterventoQuickCreateModal({
       setTitle("");
       setCantiere("");
       setDate(new Date().toISOString().slice(0, 10));
-      setTechnician("Maurizio Tanforti");
+      setTechnician("Mario Rossi");
     }
   }, [open, clients]);
 
@@ -203,7 +203,7 @@ export function InterventoQuickCreateModal({
               <Input
                 value={technician}
                 onChange={(e) => setTechnician(e.target.value)}
-                placeholder="Es. Maurizio Tanforti..."
+                placeholder="Es. Mario Rossi..."
                 className="h-9 text-xs sm:text-sm bg-background border-border"
               />
             </div>

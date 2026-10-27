@@ -1,4 +1,4 @@
-import { forwardRef } from "react";
+import React, { forwardRef } from "react";
 import type { CompanyInfo, DocItem, DocTemplate } from "@/lib/doc";
 import { docTotals, formatCurrency, formatDate, lineTotal } from "@/lib/doc";
 
@@ -330,18 +330,61 @@ export const DocPreview = forwardRef<HTMLDivElement, DocPreviewProps>(
                 </td>
               </tr>
             ) : (
-              items.map((item, i) => (
-                <tr key={i} style={{ borderBottom: `1px solid ${LINE}` }}>
-                  <td style={{ padding: "9px 10px" }}>{item.description || "—"}</td>
-                  <td style={{ padding: "9px 10px", textAlign: "right" }}>{item.qty}</td>
-                  <td style={{ padding: "9px 10px", textAlign: "right" }}>
-                    {formatCurrency(Number(item.unit_price) || 0)}
-                  </td>
-                  <td style={{ padding: "9px 10px", textAlign: "right", fontWeight: 600 }}>
-                    {formatCurrency(lineTotal(item))}
-                  </td>
-                </tr>
-              ))
+              items.map((item, i) => {
+                const prevSection = i > 0 ? items[i - 1].section : null;
+                const isNewSection = item.section && item.section !== prevSection;
+                return (
+                  <React.Fragment key={item.id || i}>
+                    {isNewSection ? (
+                      <tr
+                        style={{
+                          background: "#f1f5f9",
+                          borderTop: i > 0 ? `1.5px solid ${LINE}` : undefined,
+                          borderBottom: `1.5px solid ${LINE}`,
+                        }}
+                      >
+                        <td
+                          colSpan={4}
+                          style={{
+                            padding: "7px 10px",
+                            fontSize: 10.5,
+                            fontWeight: 700,
+                            letterSpacing: "0.5px",
+                            textTransform: "uppercase",
+                            color: DEEP,
+                          }}
+                        >
+                          {item.section}
+                        </td>
+                      </tr>
+                    ) : null}
+                    <tr style={{ borderBottom: `1px solid ${LINE}` }}>
+                      <td style={{ padding: "9px 10px" }}>
+                        <div>{item.description || "—"}</div>
+                        {item.discount && item.discount > 0 ? (
+                          <div style={{ fontSize: 10, color: GREY, marginTop: 2 }}>
+                            Sconto {item.discount}%
+                          </div>
+                        ) : null}
+                      </td>
+                      <td style={{ padding: "9px 10px", textAlign: "right", whiteSpace: "nowrap" }}>
+                        {item.qty}{" "}
+                        {item.unit ? (
+                          <span style={{ color: GREY, fontSize: 10, fontWeight: 500 }}>
+                            {item.unit}
+                          </span>
+                        ) : null}
+                      </td>
+                      <td style={{ padding: "9px 10px", textAlign: "right" }}>
+                        {formatCurrency(Number(item.unit_price) || 0)}
+                      </td>
+                      <td style={{ padding: "9px 10px", textAlign: "right", fontWeight: 600 }}>
+                        {formatCurrency(lineTotal(item))}
+                      </td>
+                    </tr>
+                  </React.Fragment>
+                );
+              })
             )}
           </tbody>
         </table>

@@ -23,6 +23,7 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { AppLayout } from "@/components/AppLayout";
+import { KPISummaryCard } from "@/components/KPISummaryCard";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -50,18 +51,18 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { useList, useRemove, useSave } from "@/hooks/data";
-import { formatCurrency } from "@/lib/doc";
+import { useList, useRemove, useSave, useCompany } from "@/hooks/data";
+import { formatCurrency, DEFAULT_UNITS_OF_MEASURE } from "@/lib/doc";
 
 export const Route = createFileRoute("/_authenticated/catalogo")({
   head: () => ({
     meta: [
-      { title: "Catalogo — INNOVAZIONE TERMICA" },
+      { title: "Catalogo — Azienda Demo Srl" },
       {
         name: "description",
         content: "Catalogo voci, ricambi, materiali e prestazioni con gestione scorte e listini.",
       },
-      { property: "og:title", content: "Catalogo — INNOVAZIONE TERMICA" },
+      { property: "og:title", content: "Catalogo — Azienda Demo Srl" },
       {
         property: "og:description",
         content: "Gestione catalogo articoli e prezzi per idraulica e termica.",
@@ -89,6 +90,7 @@ const EMPTY_ITEM = {
   quantity: 1,
   min_quantity: 1,
   unit_price: 0,
+  unit: "pz",
   supplier: "",
 };
 
@@ -105,6 +107,12 @@ function CatalogoPage() {
   const items = useList<any>("inventory_items");
   const save = useSave("inventory_items");
   const remove = useRemove("inventory_items");
+  const companyQuery = useCompany();
+  const configuredUnits =
+    companyQuery.data?.units_of_measure && companyQuery.data.units_of_measure.length > 0
+      ? companyQuery.data.units_of_measure
+      : DEFAULT_UNITS_OF_MEASURE;
+  const defaultUnit = companyQuery.data?.default_unit_of_measure || "pz";
 
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ ...EMPTY_ITEM });
@@ -246,7 +254,7 @@ function CatalogoPage() {
   };
 
   const handleOpenNew = () => {
-    setForm({ ...EMPTY_ITEM });
+    setForm({ ...EMPTY_ITEM, unit: defaultUnit });
     setOpen(true);
   };
 
@@ -257,6 +265,7 @@ function CatalogoPage() {
       quantity: Number(item.quantity || 0),
       min_quantity: Number(item.min_quantity || 0),
       unit_price: Number(item.unit_price || 0),
+      unit: item.unit || defaultUnit,
     });
     setOpen(true);
   };
@@ -272,6 +281,7 @@ function CatalogoPage() {
       quantity: Number(item.quantity || 0),
       min_quantity: Number(item.min_quantity || 0),
       unit_price: Number(item.unit_price || 0),
+      unit: item.unit || defaultUnit,
     });
     setOpen(true);
     toast.info("Voce duplicata. Modifica e salva la nuova voce.");
@@ -291,7 +301,8 @@ function CatalogoPage() {
   };
 
   const handleShareWhatsApp = (item: any) => {
-    const text = `*${item.name}* (Cod: ${item.code || "-"})\nPrezzo: ${formatCurrency(Number(item.unit_price || 0))}\nDisponibilità: ${item.quantity} pz\n— Innovazione Termica`;
+    const unitLabel = item.unit || "pz";
+    const text = `*${item.name}* (Cod: ${item.code || "-"})\nPrezzo: ${formatCurrency(Number(item.unit_price || 0))} / ${unitLabel}\nDisponibilità: ${item.quantity} ${unitLabel}\n— Azienda Demo Srl`;
     const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
     window.open(url, "_blank", "noopener,noreferrer");
   };
@@ -366,9 +377,9 @@ function CatalogoPage() {
         ? filteredRows.filter((r: any) => selectedIds.includes(r.id))
         : filteredRows;
     const csv = [
-      "Codice,Descrizione,Categoria,Prezzo Unitario,Giacenza,Min Scorta,Fornitore",
+      "Codice,Descrizione,Categoria,Prezzo Unitario,Unita di Misura,Giacenza,Min Scorta,Fornitore",
       ...rowsToExport.map((item: any) => {
-        return `"${item.code || ""}","${item.name || ""}","${item.category || ""}","${item.unit_price || 0}","${item.quantity || 0}","${item.min_quantity || 0}","${item.supplier || ""}"`;
+        return `"${item.code || ""}","${item.name || ""}","${item.category || ""}","${item.unit_price || 0}","${item.unit || "pz"}","${item.quantity || 0}","${item.min_quantity || 0}","${item.supplier || ""}"`;
       }),
     ].join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -399,7 +410,7 @@ function CatalogoPage() {
       actions={
         <Button
           onClick={handleOpenNew}
-          className="bg-primary hover:bg-primary/90 text-primary-foreground font-medium px-2.5 sm:px-4 py-2 shadow-xs rounded-lg gap-1.5 shrink-0"
+          className="h-9 px-3 sm:px-4 text-xs sm:text-sm bg-primary hover:bg-primary/90 text-primary-foreground font-semibold shadow-xs rounded-lg gap-1.5 shrink-0 cursor-pointer"
         >
           <div className="flex items-center gap-1">
             <Plus className="size-3.5 stroke-[2.5]" />
@@ -412,94 +423,45 @@ function CatalogoPage() {
     >
       <div className="space-y-5">
         {/* Indicatori Rapidi (KPI Cards interattive) */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-          <button
-            type="button"
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 w-full min-w-0">
+          <KPISummaryCard
+            label="Totale voci"
+            value={stats.totalItems}
+            hint={`${stats.totalQty} unità in giacenza`}
+            icon={Boxes}
+            tone="primary"
+            isActive={stockFilter === "all"}
             onClick={() => setStockFilter("all")}
-            className={`rounded-xl border p-3.5 sm:p-4 text-left transition-all bg-card shadow-xs flex flex-col justify-between min-h-[96px] sm:min-h-[104px] ${
-              stockFilter === "all"
-                ? "border-primary ring-1 ring-primary/20 shadow-xs"
-                : "border-border hover:bg-muted/30"
-            }`}
-          >
-            <div className="flex items-center justify-between text-muted-foreground">
-              <span className="text-xs font-medium">Totale voci</span>
-              <Boxes className="size-4 text-primary" />
-            </div>
-            <div>
-              <p className="text-xl sm:text-2xl font-bold text-foreground font-mono tabular-nums mt-1">
-                {stats.totalItems}
-              </p>
-              <p className="text-[11px] sm:text-xs text-muted-foreground/80 mt-0.5 truncate">
-                {stats.totalQty} unità in giacenza
-              </p>
-            </div>
-          </button>
-
-          <button
-            type="button"
+          />
+          <KPISummaryCard
+            label="Valore inventario"
+            value={formatCurrency(stats.totalVal)}
+            hint="Valutazione catalogo"
+            icon={DollarSign}
+            tone="emerald"
+            valueClassName="text-emerald-600 dark:text-emerald-400"
             onClick={() => setStockFilter("all")}
-            className="rounded-xl border border-border bg-card p-3.5 sm:p-4 text-left shadow-xs flex flex-col justify-between min-h-[96px] sm:min-h-[104px] hover:bg-muted/30 transition-all cursor-pointer"
-          >
-            <div className="flex items-center justify-between text-muted-foreground">
-              <span className="text-xs font-medium">Valore inventario</span>
-              <DollarSign className="size-4 text-emerald-600" />
-            </div>
-            <div>
-              <p className="text-xl sm:text-2xl font-bold text-foreground font-mono tabular-nums mt-1">
-                {formatCurrency(stats.totalVal)}
-              </p>
-              <p className="text-[11px] sm:text-xs text-muted-foreground/80 mt-0.5 truncate">
-                Valutazione catalogo
-              </p>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setStockFilter("low_stock")}
-            className={`rounded-xl border p-3.5 sm:p-4 text-left transition-all bg-card shadow-xs flex flex-col justify-between min-h-[96px] sm:min-h-[104px] ${
-              stockFilter === "low_stock"
-                ? "border-amber-500 ring-1 ring-amber-500/20 shadow-xs"
-                : "border-border hover:bg-muted/30"
-            }`}
-          >
-            <div className="flex items-center justify-between text-amber-700 dark:text-amber-400">
-              <span className="text-xs font-medium">Sotto scorta</span>
-              <AlertTriangle className="size-4" />
-            </div>
-            <div>
-              <p className="text-xl sm:text-2xl font-bold text-foreground font-mono tabular-nums mt-1">
-                {stats.lowStockCount}
-              </p>
-              <p className="text-[11px] sm:text-xs text-amber-600/80 mt-0.5 truncate">
-                Necessitano riordino
-              </p>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setStockFilter("out_of_stock")}
-            className={`rounded-xl border p-3.5 sm:p-4 text-left transition-all bg-card shadow-xs flex flex-col justify-between min-h-[96px] sm:min-h-[104px] ${
-              stockFilter === "out_of_stock"
-                ? "border-rose-500 ring-1 ring-rose-500/20 shadow-xs"
-                : "border-border hover:bg-muted/30"
-            }`}
-          >
-            <div className="flex items-center justify-between text-rose-700 dark:text-rose-400">
-              <span className="text-xs font-medium">Esauriti</span>
-              <XCircle className="size-4" />
-            </div>
-            <div>
-              <p className="text-xl sm:text-2xl font-bold text-foreground font-mono tabular-nums mt-1">
-                {stats.outOfStockCount}
-              </p>
-              <p className="text-[11px] sm:text-xs text-rose-600/80 mt-0.5 truncate">
-                Giacenza zero
-              </p>
-            </div>
-          </button>
+          />
+          <KPISummaryCard
+            label="Sotto scorta"
+            value={stats.lowStockCount}
+            hint="Necessitano riordino"
+            icon={AlertTriangle}
+            tone="amber"
+            valueClassName="text-amber-600 dark:text-amber-400"
+            isActive={stockFilter === "low_stock"}
+            onClick={() => setStockFilter(stockFilter === "low_stock" ? "all" : "low_stock")}
+          />
+          <KPISummaryCard
+            label="Esauriti"
+            value={stats.outOfStockCount}
+            hint="Giacenza zero"
+            icon={XCircle}
+            tone="rose"
+            valueClassName="text-rose-600 dark:text-rose-400"
+            isActive={stockFilter === "out_of_stock"}
+            onClick={() => setStockFilter(stockFilter === "out_of_stock" ? "all" : "out_of_stock")}
+          />
         </div>
 
         {/* Toolbar con filtri multipli dettagliati */}
@@ -795,7 +757,10 @@ function CatalogoPage() {
 
                       {/* Prezzo unitario */}
                       <TableCell className="py-3.5 text-right font-medium text-foreground text-sm">
-                        {formatCurrency(price)}
+                        <span>{formatCurrency(price)}</span>
+                        <span className="text-[11px] text-muted-foreground font-normal ml-1">
+                          /{item.unit || "pz"}
+                        </span>
                       </TableCell>
 
                       {/* Giacenza con regolazione rapida (+ / -) */}
@@ -810,7 +775,12 @@ function CatalogoPage() {
                           >
                             <Minus className="size-3" />
                           </button>
-                          <span className="font-bold text-sm min-w-7 text-center">{qty}</span>
+                          <span className="font-bold text-sm min-w-7 text-center">
+                            {qty}{" "}
+                            <span className="text-[10px] font-normal text-muted-foreground">
+                              {item.unit || "pz"}
+                            </span>
+                          </span>
                           <button
                             type="button"
                             onClick={() => handleAdjustQuantity(item, 1)}
@@ -973,7 +943,7 @@ function CatalogoPage() {
               />
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="i_price">Prezzo unitario (€)</Label>
                 <Input
@@ -990,6 +960,29 @@ function CatalogoPage() {
                   }
                   placeholder="0.00"
                 />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="i_unit">Unità di misura</Label>
+                <Select
+                  value={form.unit || defaultUnit}
+                  onValueChange={(val) => setForm((prev) => ({ ...prev, unit: val }))}
+                >
+                  <SelectTrigger id="i_unit">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {configuredUnits.map((u) => (
+                      <SelectItem key={u.id} value={u.code}>
+                        {u.code} ({u.name})
+                      </SelectItem>
+                    ))}
+                    {!configuredUnits.some((u) => u.code === (form.unit || defaultUnit)) && (
+                      <SelectItem value={form.unit || defaultUnit}>
+                        {form.unit || defaultUnit}
+                      </SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="i_qty">Quantità giacenza</Label>

@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/sidebar";
 import { useCompany } from "@/hooks/data";
 import { useSidebarNavConfig, NAV_ICONS_MAP } from "@/hooks/useSidebarNavConfig";
+import { PWAInstallHeaderButton, PWAInstallSidebarItem } from "@/components/PWAInstallTrigger";
 
 const NAV = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -98,21 +99,26 @@ export function AppLayout({
           <Link
             to="/dashboard"
             title="Vai alla Dashboard principale"
-            className="flex items-center gap-2.5 group-data-[collapsible=icon]:justify-center cursor-pointer hover:opacity-85 transition-opacity rounded-lg p-1 -m-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+            className="flex items-center gap-2.5 group-data-[collapsible=icon]:justify-center cursor-pointer hover:opacity-90 transition-opacity rounded-lg p-1 -m-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
           >
-            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-card/60 overflow-hidden border border-border/50 p-0.5 shadow-2xs">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-white/10 overflow-hidden border border-white/20 p-1 shadow-xs">
               <img
                 src={currentLogo}
                 alt="ArtigianoSmart"
-                width={36}
-                height={36}
-                className="max-h-full max-w-full object-contain rounded-md"
+                width={32}
+                height={32}
+                className="max-h-full max-w-full object-contain rounded-sm"
               />
             </div>
             <div className="min-w-0 group-data-[collapsible=icon]:hidden">
-              <p className="truncate text-base font-semibold tracking-tight text-sidebar-foreground font-sans">
-                <span className="font-bold text-foreground">Artigiano</span>
-                <span className="font-black text-primary ml-0.5">Smart</span>
+              <p className="truncate text-base font-bold tracking-tight text-white font-sans flex items-center">
+                <span
+                  className="font-extrabold text-white tracking-wide"
+                  style={{ color: "#ffffff" }}
+                >
+                  ARTIGIANO
+                </span>
+                <span className="font-black text-amber-400 ml-1.5 tracking-wider">SMART</span>
               </p>
             </div>
           </Link>
@@ -125,23 +131,32 @@ export function AppLayout({
         </SidebarFooter>
       </Sidebar>
 
-      <SidebarInset className="bg-background min-h-screen flex flex-col">
-        <header className="sticky top-0 z-20 border-b bg-card/90 px-4 sm:px-6 lg:px-8 py-2.5 sm:py-3 backdrop-blur shadow-xs">
-          <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-2 sm:gap-4 min-w-0">
-            <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 mr-1">
-              <SidebarTrigger />
-              <div className="min-w-0 flex-1">
-                <h1 className="truncate text-base sm:text-lg font-semibold tracking-tight">
+      <SidebarInset className="bg-background min-h-screen flex flex-col min-w-0 overflow-x-hidden">
+        <header className="sticky top-0 z-20 w-full border-b border-border bg-card/95 backdrop-blur-md shadow-xs pt-[env(safe-area-inset-top)]">
+          <div className="mx-auto flex h-14 sm:h-16 w-full max-w-7xl items-center justify-between gap-2 sm:gap-4 px-4 sm:px-6 lg:px-8 min-w-0">
+            <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0 flex-1 mr-1">
+              <SidebarTrigger className="h-8 w-8 sm:h-9 sm:w-9 rounded-lg border border-border/60 hover:bg-muted text-muted-foreground hover:text-foreground shrink-0 cursor-pointer" />
+              <div className="min-w-0 flex-1 flex flex-col justify-center">
+                <h1 className="truncate text-base sm:text-lg font-bold tracking-tight text-foreground leading-tight">
                   {title}
                 </h1>
                 {description ? (
-                  <p className="truncate text-xs text-muted-foreground hidden sm:block">
+                  <p className="truncate text-xs text-muted-foreground hidden sm:block leading-snug">
                     {description}
                   </p>
                 ) : null}
               </div>
             </div>
-            <div className="hidden text-right text-xs text-muted-foreground md:block">{email}</div>
+            {email ? (
+              <div
+                className="hidden lg:flex items-center gap-1.5 text-xs text-muted-foreground font-medium px-2.5 py-1 rounded-full bg-muted/60 border border-border/60 max-w-[220px] shrink-0 select-none"
+                title={email}
+              >
+                <span className="size-1.5 rounded-full bg-emerald-500 shrink-0" />
+                <span className="truncate">{email}</span>
+              </div>
+            ) : null}
+            <PWAInstallHeaderButton />
             {actions ? (
               <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">{actions}</div>
             ) : null}
@@ -202,6 +217,7 @@ function AppSidebarFooter({
 
   return (
     <SidebarMenu>
+      <PWAInstallSidebarItem />
       <SidebarMenuItem>
         <SidebarMenuButton asChild isActive={pathname === "/impostazioni"} tooltip="Impostazioni">
           <Link to="/impostazioni" onClick={handleSettingsClick}>

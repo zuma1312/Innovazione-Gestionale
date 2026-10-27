@@ -112,7 +112,7 @@ function persistUnits(units: UnitOfMeasure[]) {
 }
 
 export function useUnitsOfMeasure() {
-  const [units, setUnits] = useState<UnitOfMeasure[]>(loadUnits);
+  const [units, setUnits] = useState<UnitOfMeasure[]>(DEFAULT_UNITS_OF_MEASURE);
 
   useEffect(() => {
     setUnits(loadUnits());

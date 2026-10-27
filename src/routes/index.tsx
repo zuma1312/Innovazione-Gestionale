@@ -11,13 +11,13 @@ import logo from "@/assets/logo.png";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Accesso — INNOVAZIONE TERMICA | Gestionale idraulico" },
+      { title: "Accesso — Azienda Demo Srl | Gestionale idraulico" },
       {
         name: "description",
         content:
-          "Gestionale per interventi idraulici e pronto intervento a Roma: clienti, agenda, preventivi, fatture e magazzino.",
+          "Gestionale per interventi idraulici e pronto intervento: clienti, agenda, preventivi, fatture e magazzino.",
       },
-      { property: "og:title", content: "INNOVAZIONE TERMICA — Gestionale idraulico" },
+      { property: "og:title", content: "Azienda Demo Srl — Gestionale idraulico" },
       {
         property: "og:description",
         content: "Clienti, agenda, interventi, preventivi, fatture e magazzino in un unico posto.",
@@ -73,11 +73,22 @@ function LoginPage() {
   return (
     <div className="flex min-h-screen flex-col lg:flex-row">
       <div className="relative hidden flex-1 bg-brand p-12 text-primary-foreground lg:flex lg:flex-col lg:justify-between">
-        <div className="flex items-center gap-3">
-          <img src={logo} alt="" width={48} height={48} className="size-12" />
+        <div className="flex items-center gap-3.5">
+          <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-white/10 overflow-hidden border border-white/20 p-1 shadow-sm">
+            <img
+              src={logo}
+              alt="ArtigianoSmart"
+              width={40}
+              height={40}
+              className="max-h-full max-w-full object-contain"
+            />
+          </div>
           <div>
-            <p className="text-xl font-bold tracking-wide">INNOVAZIONE TERMICA</p>
-            <p className="text-sm opacity-80">Idraulica e pronto intervento · Roma</p>
+            <p className="text-2xl font-bold tracking-tight text-white flex items-center">
+              <span className="font-extrabold tracking-wide text-white">ARTIGIANO</span>
+              <span className="font-black text-amber-400 ml-1.5 tracking-wider">SMART</span>
+            </p>
+            <p className="text-xs text-white/80 mt-0.5">Gestionale per artigiani e tecnici</p>
           </div>
         </div>
         <div className="max-w-md space-y-4">
@@ -85,18 +96,29 @@ function LoginPage() {
             Il tuo lavoro, organizzato dal primo squillo alla fattura.
           </h2>
           <p className="opacity-85">
-            Clienti, agenda appuntamenti, interventi, preventivi, fatture e magazzino con PDF pronti
+            Clienti, agenda appuntamenti, interventi, preventivi, fatture e catalogo con PDF pronti
             da stampare e inviare.
           </p>
         </div>
-        <p className="text-xs opacity-70">© {new Date().getFullYear()} Innovazione Termica</p>
+        <p className="text-xs opacity-70">© {new Date().getFullYear()} ArtigianoSmart</p>
       </div>
 
       <div className="flex flex-1 items-center justify-center bg-brand-soft p-6">
         <div className="w-full max-w-md card-surface p-8">
           <div className="mb-6 flex flex-col items-center text-center lg:hidden">
-            <img src={logo} alt="" width={64} height={64} className="size-16" />
-            <p className="mt-3 text-lg font-bold">INNOVAZIONE TERMICA</p>
+            <div className="flex size-14 items-center justify-center rounded-xl bg-card border border-border p-1.5 shadow-xs mb-2">
+              <img
+                src={logo}
+                alt="ArtigianoSmart"
+                width={48}
+                height={48}
+                className="max-h-full max-w-full object-contain"
+              />
+            </div>
+            <p className="text-xl font-bold tracking-tight text-foreground flex items-center">
+              <span className="font-extrabold tracking-wide">ARTIGIANO</span>
+              <span className="font-black text-primary ml-1.5 tracking-wider">SMART</span>
+            </p>
           </div>
           <h1 className="text-center text-2xl font-bold">
             {mode === "login" ? "Accedi al gestionale" : "Crea il tuo accesso"}
@@ -115,7 +137,7 @@ function LoginPage() {
                   type="email"
                   required
                   className="pl-9"
-                  placeholder="nome@innovazionetermica.it"
+                  placeholder="demo@example.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                 />
@@ -140,38 +162,6 @@ function LoginPage() {
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
               {mode === "login" ? "Accedi" : "Registrati"}
-            </Button>
-
-            <div className="relative my-3">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-border" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-card px-2 text-muted-foreground">oppure</span>
-              </div>
-            </div>
-
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full"
-              onClick={async () => {
-                setLoading(true);
-                try {
-                  await supabase.auth.signInWithPassword({
-                    email: "maurizio.tanforti@gmail.com",
-                    password: "demo-password-2025",
-                  });
-                  navigate({ to: "/dashboard", replace: true });
-                } catch {
-                  toast.error("Accesso demo non riuscito.");
-                } finally {
-                  setLoading(false);
-                }
-              }}
-              disabled={loading}
-            >
-              Accesso Rapido Demo (Maurizio Tanforti)
             </Button>
           </form>
 

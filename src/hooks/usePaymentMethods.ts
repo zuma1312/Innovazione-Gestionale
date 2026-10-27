@@ -79,7 +79,7 @@ export const DEFAULT_PAYMENT_METHODS: PaymentMethod[] = [
     code: "MP05",
     typeLabel: "Bonifico (MP05)",
     name: "Bonifico",
-    iban: "IT20X0878773190000000070774",
+    iban: "IT00X0000000000000000000000",
     is_default: true,
     is_system: true,
   },
@@ -88,22 +88,7 @@ export const DEFAULT_PAYMENT_METHODS: PaymentMethod[] = [
 const STORAGE_KEY = "app_payment_methods";
 
 export function usePaymentMethods() {
-  const [methods, setMethods] = useState<PaymentMethod[]>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            return parsed;
-          }
-        }
-      } catch (e) {
-        console.warn("Could not read payment methods from localStorage", e);
-      }
-    }
-    return DEFAULT_PAYMENT_METHODS;
-  });
+  const [methods, setMethods] = useState<PaymentMethod[]>(DEFAULT_PAYMENT_METHODS);
 
   // Sync with current user storage key
   useEffect(() => {

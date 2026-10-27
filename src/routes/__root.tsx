@@ -79,19 +79,25 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   head: () => ({
     meta: [
       { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Innovazione Termica" },
+      { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
+      { title: "ArtigianoSmart — Gestionale Aziendale" },
       {
         name: "description",
         content:
-          "Gestionale per interventi idraulici e pronto intervento a Roma: clienti, agenda, interventi, preventivi e fatture.",
+          "ArtigianoSmart: gestionale completo per artigiani e tecnici. Clienti, agenda, interventi, preventivi, fatture e catalogo.",
       },
-      { name: "author", content: "Innovazione Termica" },
-      { property: "og:title", content: "Innovazione Termica" },
+      { name: "author", content: "ArtigianoSmart" },
+      { name: "theme-color", content: "#1e1b4b" },
+      { name: "mobile-web-app-capable", content: "yes" },
+      { name: "apple-mobile-web-app-capable", content: "yes" },
+      { name: "apple-mobile-web-app-status-bar-style", content: "default" },
+      { name: "apple-mobile-web-app-title", content: "ArtigianoSmart" },
+      { name: "application-name", content: "ArtigianoSmart" },
+      { property: "og:title", content: "ArtigianoSmart — Gestionale Aziendale" },
       {
         property: "og:description",
         content:
-          "Gestionale per interventi idraulici e pronto intervento a Roma: clienti, agenda, interventi, preventivi e fatture.",
+          "ArtigianoSmart: gestionale completo per artigiani e tecnici. Clienti, agenda, interventi, preventivi, fatture e catalogo.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -102,6 +108,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         rel: "stylesheet",
         href: appCss,
       },
+      { rel: "manifest", href: "/manifest.json" },
+      { rel: "apple-touch-icon", href: "/apple-touch-icon.png", sizes: "180x180" },
       { rel: "icon", href: "/favicon.png", type: "image/png" },
     ],
   }),
@@ -113,11 +121,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="it" suppressHydrationWarning>
       <head>
         <HeadContent />
       </head>
-      <body>
+      <body suppressHydrationWarning>
         {children}
         <Scripts />
       </body>

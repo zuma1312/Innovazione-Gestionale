@@ -38,10 +38,19 @@ import {
 } from "@/components/ui/select";
 import type { ClientOption, DocFormValue } from "@/components/DocumentEditor";
 import type { CompanyInfo, DocItem, DocTemplate } from "@/lib/doc";
-import { TEMPLATES, docTotals, emptyItem, formatCurrency, lineTotal } from "@/lib/doc";
+import {
+  TEMPLATES,
+  docTotals,
+  emptyItem,
+  formatCurrency,
+  lineTotal,
+  DEFAULT_VAT_RATES,
+  DEFAULT_UNITS_OF_MEASURE,
+} from "@/lib/doc";
 import { DocPreview } from "@/components/DocPreview";
 import { downloadPdf, printElement } from "@/lib/pdf";
 import { usePaymentMethods } from "@/hooks/usePaymentMethods";
+import { useCompany } from "@/hooks/data";
 
 type Props = {
   value: DocFormValue;
@@ -71,6 +80,16 @@ export function FatturaInlineEditor({
   const hiddenPreviewRef = useRef<HTMLDivElement>(null);
   const [downloading, setDownloading] = useState(false);
   const { methods, defaultMethod } = usePaymentMethods();
+  const companyQuery = useCompany();
+  const configuredVatRates =
+    companyQuery.data?.vat_rates && companyQuery.data.vat_rates.length > 0
+      ? companyQuery.data.vat_rates
+      : DEFAULT_VAT_RATES;
+  const configuredUnits =
+    companyQuery.data?.units_of_measure && companyQuery.data.units_of_measure.length > 0
+      ? companyQuery.data.units_of_measure
+      : DEFAULT_UNITS_OF_MEASURE;
+  const defaultUnit = companyQuery.data?.default_unit_of_measure || "pz";
 
   const selectedClient = clients.find((c) => c.id === value.client_id);
   const totals = docTotals(value.items, value.vat_rate);
@@ -85,12 +104,12 @@ export function FatturaInlineEditor({
   };
 
   const addItem = () => {
-    updateField({ items: [...value.items, emptyItem()] });
+    updateField({ items: [...value.items, emptyItem(defaultUnit)] });
   };
 
   const removeItem = (index: number) => {
     if (value.items.length <= 1) {
-      updateField({ items: [emptyItem()] });
+      updateField({ items: [emptyItem(defaultUnit)] });
       return;
     }
     const items = value.items.filter((_, i) => i !== index);
@@ -558,9 +577,9 @@ export function FatturaInlineEditor({
                       </Button>
                     </div>
 
-                    {/* Quantità, Prezzo unitario e Totale riga */}
-                    <div className="grid grid-cols-12 gap-3 pl-7 items-center">
-                      <div className="col-span-4 sm:col-span-3">
+                    {/* Quantità, Unità di Misura, Prezzo unitario e Totale riga */}
+                    <div className="grid grid-cols-12 gap-2 sm:gap-3 pl-7 items-center">
+                      <div className="col-span-3 sm:col-span-2">
                         <Label className="text-[10px] text-muted-foreground uppercase block mb-0.5">
                           Q.tà
                         </Label>
@@ -574,9 +593,40 @@ export function FatturaInlineEditor({
                         />
                       </div>
 
-                      <div className="col-span-5 sm:col-span-4">
+                      <div className="col-span-3 sm:col-span-2">
                         <Label className="text-[10px] text-muted-foreground uppercase block mb-0.5">
-                          Prezzo Unitario (€)
+                          U.M.
+                        </Label>
+                        <Select
+                          value={item.unit || defaultUnit}
+                          onValueChange={(val) => updateItem(idx, { unit: val })}
+                        >
+                          <SelectTrigger className="h-8 text-xs bg-background border-border px-2">
+                            <SelectValue placeholder="U.M." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {configuredUnits.map((u) => (
+                              <SelectItem key={u.id} value={u.code} className="text-xs">
+                                {u.code}{" "}
+                                <span className="text-muted-foreground text-[10px]">
+                                  ({u.name})
+                                </span>
+                              </SelectItem>
+                            ))}
+                            {!configuredUnits.some(
+                              (u) => u.code === (item.unit || defaultUnit),
+                            ) && (
+                              <SelectItem value={item.unit || defaultUnit} className="text-xs">
+                                {item.unit || defaultUnit}
+                              </SelectItem>
+                            )}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="col-span-3 sm:col-span-4">
+                        <Label className="text-[10px] text-muted-foreground uppercase block mb-0.5">
+                          Prezzo Unit. (€)
                         </Label>
                         <Input
                           type="number"
@@ -590,7 +640,7 @@ export function FatturaInlineEditor({
                         />
                       </div>
 
-                      <div className="col-span-3 sm:col-span-5 text-right">
+                      <div className="col-span-3 sm:col-span-4 text-right">
                         <Label className="text-[10px] text-muted-foreground uppercase block mb-0.5">
                           Totale
                         </Label>
@@ -748,19 +798,27 @@ export function FatturaInlineEditor({
               {/* Aliquota IVA */}
               <div className="flex items-center justify-between text-xs sm:text-sm">
                 <span className="text-muted-foreground">Aliquota IVA:</span>
-                <div className="w-24">
+                <div>
                   <Select
                     value={String(value.vat_rate)}
                     onValueChange={(v) => updateField({ vat_rate: Number(v) })}
                   >
-                    <SelectTrigger className="h-7 text-xs font-mono bg-background border-border">
+                    <SelectTrigger className="h-7 min-w-[95px] text-xs font-mono bg-background border-border">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="22">22%</SelectItem>
-                      <SelectItem value="10">10%</SelectItem>
-                      <SelectItem value="4">4%</SelectItem>
-                      <SelectItem value="0">0% (Esente)</SelectItem>
+                      {configuredVatRates.map((vr) => (
+                        <SelectItem key={vr.id} value={String(vr.rate)} className="text-xs">
+                          {vr.rate}% {vr.label ? `· ${vr.label}` : ""}
+                        </SelectItem>
+                      ))}
+                      {!configuredVatRates.some(
+                        (vr) => Number(vr.rate) === Number(value.vat_rate),
+                      ) && (
+                        <SelectItem value={String(value.vat_rate)} className="text-xs">
+                          {value.vat_rate}% (Personalizzata)
+                        </SelectItem>
+                      )}
                     </SelectContent>
                   </Select>
                 </div>

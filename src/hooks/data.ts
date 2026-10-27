@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import type { CompanyInfo } from "@/lib/doc";
+import type { CompanyInfo, VatRateOption, UnitOfMeasureOption } from "@/lib/doc";
+import { DEFAULT_VAT_RATES, DEFAULT_UNITS_OF_MEASURE } from "@/lib/doc";
 
 export type TableName =
   | "clients"
@@ -74,13 +75,13 @@ export function useRemove(table: TableName) {
 }
 
 export const DEFAULT_COMPANY: CompanyInfo = {
-  company_name: "INNOVAZIONE TERMICA",
-  address: "",
+  company_name: "Azienda Demo Srl",
+  address: "Via Roma 100",
   city: "Roma",
-  phone: "3891344474",
-  email: "maurizio.tanforti@gmail.com",
-  vat_number: "",
-  iban: "",
+  phone: "0000000000",
+  email: "demo@example.com",
+  vat_number: "00000000000",
+  iban: "IT00X0000000000000000000000",
 };
 
 export type CompanySettings = CompanyInfo & {
@@ -131,17 +132,25 @@ export type CompanySettings = CompanyInfo & {
   // Profilo utenti permessi
   tech_can_view_prices: boolean;
   allow_edit_approved_quotes: boolean;
+
+  // Aliquote e Unità di misura avanzate
+  vat_rates: VatRateOption[];
+  units_of_measure: UnitOfMeasureOption[];
+  default_unit_of_measure: string;
 };
 
 export const DEFAULT_SETTINGS: CompanySettings = {
   ...DEFAULT_COMPANY,
   default_vat_rate: 22,
+  vat_rates: DEFAULT_VAT_RATES,
+  units_of_measure: DEFAULT_UNITS_OF_MEASURE,
+  default_unit_of_measure: "pz",
   default_template: "classico",
-  owner_first_name: "Maurizio",
-  owner_last_name: "Tanforti",
-  fiscal_code: "",
-  zip: "",
-  province: "",
+  owner_first_name: "Mario",
+  owner_last_name: "Rossi",
+  fiscal_code: "RSSMRA80A01H501U",
+  zip: "00100",
+  province: "RM",
   logo_url: "",
   quote_prefix: "PREV",
   quote_validity_days: 30,
@@ -150,7 +159,7 @@ export const DEFAULT_SETTINGS: CompanySettings = {
   quote_default_exclusions: "Tutto quanto non esplicitamente descritto nelle voci del preventivo",
 
   sdi_code: "0000000",
-  pec_email: "fatture@pec.innovazionetermica.it",
+  pec_email: "demo@pec.example.com",
   xml_transmission_format: "FPR12",
   tax_regime: "RF01",
 
@@ -168,7 +177,7 @@ export const DEFAULT_SETTINGS: CompanySettings = {
 
   whatsapp_enabled: true,
   whatsapp_custom_msg:
-    "Gentile cliente, le inviamo in allegato il documento di Innovazione Termica. Restiamo a disposizione per qualsiasi chiarimento.",
+    "Gentile cliente, le inviamo in allegato il documento di Azienda Demo Srl. Restiamo a disposizione per qualsiasi chiarimento.",
   google_calendar_enabled: false,
 
   public_link_expiration_days: 60,
@@ -212,11 +221,21 @@ export function useCompany() {
         return { ...DEFAULT_SETTINGS, ...cached, ...row };
       }
 
-      return {
+      const merged: CompanySettings = {
         ...DEFAULT_SETTINGS,
         ...cached,
         ...data,
       };
+      if (!Array.isArray(merged.vat_rates) || merged.vat_rates.length === 0) {
+        merged.vat_rates = DEFAULT_VAT_RATES;
+      }
+      if (!Array.isArray(merged.units_of_measure) || merged.units_of_measure.length === 0) {
+        merged.units_of_measure = DEFAULT_UNITS_OF_MEASURE;
+      }
+      if (!merged.default_unit_of_measure) {
+        merged.default_unit_of_measure = "pz";
+      }
+      return merged;
     },
   });
 }
@@ -232,7 +251,7 @@ export function useSaveCompany() {
       // Save known Supabase columns
       const dbPayload = {
         user_id: userId,
-        company_name: row.company_name ?? "INNOVAZIONE TERMICA",
+        company_name: row.company_name ?? "Azienda Demo Srl",
         address: row.address ?? "",
         city: row.city ?? "Roma",
         phone: row.phone ?? "",

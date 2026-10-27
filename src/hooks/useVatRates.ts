@@ -82,7 +82,7 @@ function persistVatRates(rates: VatRate[]) {
 }
 
 export function useVatRates() {
-  const [rates, setRates] = useState<VatRate[]>(loadVatRates);
+  const [rates, setRates] = useState<VatRate[]>(DEFAULT_VAT_RATES);
 
   useEffect(() => {
     setRates(loadVatRates());

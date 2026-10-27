@@ -98,7 +98,7 @@ export function ClienteInlineEditor({
     if (clean.length === 10 && clean.startsWith("3")) {
       clean = `39${clean}`;
     }
-    const msg = `Salve ${value.name}, vi contattiamo da Innovazione Termica. Restiamo a disposizione per qualsiasi necessità.`;
+    const msg = `Salve ${value.name}, vi contattiamo da Azienda Demo Srl. Restiamo a disposizione per qualsiasi necessità.`;
     window.open(
       `https://wa.me/${clean}?text=${encodeURIComponent(msg)}`,
       "_blank",

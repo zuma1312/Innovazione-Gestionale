@@ -23,6 +23,7 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { AppLayout } from "@/components/AppLayout";
+import { KPISummaryCard } from "@/components/KPISummaryCard";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -54,12 +55,12 @@ import { useList, useRemove, useSave } from "@/hooks/data";
 export const Route = createFileRoute("/_authenticated/clienti")({
   head: () => ({
     meta: [
-      { title: "Clienti — INNOVAZIONE TERMICA" },
+      { title: "Clienti — Azienda Demo Srl" },
       {
         name: "description",
         content: "Privati e aziende, con i cantieri collegati.",
       },
-      { property: "og:title", content: "Clienti — INNOVAZIONE TERMICA" },
+      { property: "og:title", content: "Clienti — Azienda Demo Srl" },
       {
         property: "og:description",
         content: "Privati e aziende, con i cantieri collegati.",
@@ -240,8 +241,8 @@ function ClientiPage() {
     }
 
     const greeting = name
-      ? `Ciao ${name}, ti contatto da Innovazione Termica.`
-      : `Salve, vi contatto da Innovazione Termica.`;
+      ? `Ciao ${name}, ti contatto da Azienda Demo Srl.`
+      : `Salve, vi contatto da Azienda Demo Srl.`;
 
     const url = `https://wa.me/${clean}?text=${encodeURIComponent(greeting)}`;
     window.open(url, "_blank", "noopener,noreferrer");
@@ -382,7 +383,7 @@ function ClientiPage() {
       actions={
         <Button
           onClick={handleOpenQuickCreate}
-          className="bg-primary hover:bg-primary/90 text-primary-foreground font-medium px-2.5 sm:px-4 py-2 shadow-xs rounded-lg gap-1.5 shrink-0"
+          className="h-9 px-3 sm:px-4 text-xs sm:text-sm bg-primary hover:bg-primary/90 text-primary-foreground font-semibold shadow-xs rounded-lg gap-1.5 shrink-0 cursor-pointer"
         >
           <div className="flex items-center gap-1">
             <Plus className="size-3.5 stroke-[2.5]" />
@@ -395,100 +396,48 @@ function ClientiPage() {
     >
       <div className="space-y-5">
         {/* Indicatori Rapidi (KPI Cards interattive) */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-          <button
-            type="button"
-            onClick={() => setTypeFilter("all")}
-            className={`rounded-xl border p-3.5 sm:p-4 text-left transition-all bg-card shadow-xs flex flex-col justify-between min-h-[96px] sm:min-h-[104px] ${
-              typeFilter === "all"
-                ? "border-primary ring-1 ring-primary/20 shadow-xs"
-                : "border-border hover:bg-muted/30"
-            }`}
-          >
-            <div className="flex items-center justify-between text-muted-foreground">
-              <span className="text-xs font-medium">Totale clienti</span>
-              <Users className="size-4 text-primary" />
-            </div>
-            <div>
-              <p className="text-xl sm:text-2xl font-bold text-foreground font-mono tabular-nums mt-1">
-                {stats.total}
-              </p>
-              <p className="text-[11px] sm:text-xs text-muted-foreground/80 mt-0.5 truncate">
-                Anagrafiche registrate
-              </p>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setTypeFilter("privato")}
-            className={`rounded-xl border p-3.5 sm:p-4 text-left transition-all bg-card shadow-xs flex flex-col justify-between min-h-[96px] sm:min-h-[104px] ${
-              typeFilter === "privato"
-                ? "border-primary ring-1 ring-primary/20 shadow-xs"
-                : "border-border hover:bg-muted/30"
-            }`}
-          >
-            <div className="flex items-center justify-between text-muted-foreground">
-              <span className="text-xs font-medium">Privati</span>
-              <User className="size-4 text-primary" />
-            </div>
-            <div>
-              <p className="text-xl sm:text-2xl font-bold text-foreground font-mono tabular-nums mt-1">
-                {stats.privati}
-              </p>
-              <p className="text-[11px] sm:text-xs text-muted-foreground/80 mt-0.5 truncate">
-                Clienti privati
-              </p>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setTypeFilter("azienda")}
-            className={`rounded-xl border p-3.5 sm:p-4 text-left transition-all bg-card shadow-xs flex flex-col justify-between min-h-[96px] sm:min-h-[104px] ${
-              typeFilter === "azienda"
-                ? "border-primary ring-1 ring-primary/20 shadow-xs"
-                : "border-border hover:bg-muted/30"
-            }`}
-          >
-            <div className="flex items-center justify-between text-muted-foreground">
-              <span className="text-xs font-medium">Aziende</span>
-              <Building2 className="size-4 text-primary" />
-            </div>
-            <div>
-              <p className="text-xl sm:text-2xl font-bold text-foreground font-mono tabular-nums mt-1">
-                {stats.aziende}
-              </p>
-              <p className="text-[11px] sm:text-xs text-muted-foreground/80 mt-0.5 truncate">
-                Aziende e ditte
-              </p>
-            </div>
-          </button>
-
-          <button
-            type="button"
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 w-full min-w-0">
+          <KPISummaryCard
+            label="Totale clienti"
+            value={stats.total}
+            hint="Anagrafiche registrate"
+            icon={Users}
+            tone="primary"
+            isActive={typeFilter === "all" && cantieriFilter === "all"}
+            onClick={() => {
+              setTypeFilter("all");
+              setCantieriFilter("all");
+            }}
+          />
+          <KPISummaryCard
+            label="Privati"
+            value={stats.privati}
+            hint="Clienti privati"
+            icon={User}
+            tone="blue"
+            isActive={typeFilter === "privato"}
+            onClick={() => setTypeFilter(typeFilter === "privato" ? "all" : "privato")}
+          />
+          <KPISummaryCard
+            label="Aziende"
+            value={stats.aziende}
+            hint="Aziende e ditte"
+            icon={Building2}
+            tone="purple"
+            isActive={typeFilter === "azienda"}
+            onClick={() => setTypeFilter(typeFilter === "azienda" ? "all" : "azienda")}
+          />
+          <KPISummaryCard
+            label="Con cantieri"
+            value={stats.withCantieri}
+            hint="Interventi registrati"
+            icon={Wrench}
+            tone="emerald"
+            isActive={cantieriFilter === "with_cantieri"}
             onClick={() =>
               setCantieriFilter(cantieriFilter === "with_cantieri" ? "all" : "with_cantieri")
             }
-            className={`rounded-xl border p-3.5 sm:p-4 text-left transition-all bg-card shadow-xs flex flex-col justify-between min-h-[96px] sm:min-h-[104px] ${
-              cantieriFilter === "with_cantieri"
-                ? "border-primary ring-1 ring-primary/20 shadow-xs"
-                : "border-border hover:bg-muted/30"
-            }`}
-          >
-            <div className="flex items-center justify-between text-muted-foreground">
-              <span className="text-xs font-medium">Con cantieri</span>
-              <Wrench className="size-4 text-primary" />
-            </div>
-            <div>
-              <p className="text-xl sm:text-2xl font-bold text-foreground font-mono tabular-nums mt-1">
-                {stats.withCantieri}
-              </p>
-              <p className="text-[11px] sm:text-xs text-muted-foreground/80 mt-0.5 truncate">
-                Interventi registrati
-              </p>
-            </div>
-          </button>
+          />
         </div>
 
         {/* Card Contenitore Principale con Tabella e Filtri */}

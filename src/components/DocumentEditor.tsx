@@ -14,11 +14,18 @@ import {
 } from "@/components/ui/select";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { DocPreview } from "@/components/DocPreview";
-import { DocPreviewModal } from "@/components/DocPreviewModal";
-import { TEMPLATES, docTotals, emptyItem, formatCurrency } from "@/lib/doc";
+import {
+  TEMPLATES,
+  docTotals,
+  emptyItem,
+  formatCurrency,
+  DEFAULT_VAT_RATES,
+  DEFAULT_UNITS_OF_MEASURE,
+} from "@/lib/doc";
 import type { CompanyInfo, DocItem, DocTemplate } from "@/lib/doc";
 import { downloadPdf, printElement, sendByEmail } from "@/lib/pdf";
 import { usePaymentMethods } from "@/hooks/usePaymentMethods";
+import { useCompany } from "@/hooks/data";
 import { cn } from "@/lib/utils";
 
 export type ClientOption = {
@@ -50,6 +57,7 @@ export type DocFormValue = {
   payment_iban?: string;
   payment_conditions?: string;
   exclusions?: string;
+  sections?: string[];
 };
 
 type Props = {
@@ -88,6 +96,16 @@ export function DocumentEditor(props: Props) {
   const client = clients.find((c) => c.id === value.client_id);
   const totals = docTotals(value.items, value.vat_rate);
   const { methods, defaultMethod } = usePaymentMethods();
+  const companyQuery = useCompany();
+  const configuredVatRates =
+    companyQuery.data?.vat_rates && companyQuery.data.vat_rates.length > 0
+      ? companyQuery.data.vat_rates
+      : DEFAULT_VAT_RATES;
+  const configuredUnits =
+    companyQuery.data?.units_of_measure && companyQuery.data.units_of_measure.length > 0
+      ? companyQuery.data.units_of_measure
+      : DEFAULT_UNITS_OF_MEASURE;
+  const defaultUnit = companyQuery.data?.default_unit_of_measure || "pz";
   const set = useCallback(
     (patch: Partial<DocFormValue>) => onChange({ ...value, ...patch }),
     [value, onChange],
@@ -387,7 +405,7 @@ export function DocumentEditor(props: Props) {
                     type="button"
                     size="sm"
                     variant="secondary"
-                    onClick={() => set({ items: [...value.items, emptyItem()] })}
+                    onClick={() => set({ items: [...value.items, emptyItem(defaultUnit)] })}
                   >
                     <Plus className="mr-1 size-4" /> Voce
                   </Button>
@@ -395,7 +413,7 @@ export function DocumentEditor(props: Props) {
                 {value.items.map((item, index) => (
                   <div
                     key={index}
-                    className="flex flex-col sm:grid sm:grid-cols-[minmax(0,1fr)_80px_100px_auto] items-stretch sm:items-center gap-2 p-2.5 sm:p-0 rounded-lg bg-muted/30 sm:bg-transparent border sm:border-0 border-border"
+                    className="flex flex-col sm:grid sm:grid-cols-[minmax(0,1fr)_70px_85px_95px_auto] items-stretch sm:items-center gap-2 p-2.5 sm:p-0 rounded-lg bg-muted/30 sm:bg-transparent border sm:border-0 border-border"
                   >
                     <Input
                       placeholder="Descrizione voce o materiale"
@@ -413,8 +431,38 @@ export function DocumentEditor(props: Props) {
                           step="0.5"
                           value={item.qty}
                           onChange={(e) => updateItem(index, { qty: Number(e.target.value) })}
-                          className="bg-background w-full sm:w-20"
+                          className="bg-background w-full sm:w-[70px]"
                         />
+                      </div>
+                      <div className="flex items-center gap-1 flex-1 sm:flex-none">
+                        <span className="sm:hidden text-xs text-muted-foreground shrink-0">
+                          U.M.:
+                        </span>
+                        <Select
+                          value={item.unit || defaultUnit}
+                          onValueChange={(val) => updateItem(index, { unit: val })}
+                        >
+                          <SelectTrigger className="bg-background w-full sm:w-[85px] text-xs h-9">
+                            <SelectValue placeholder="U.M." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {configuredUnits.map((u) => (
+                              <SelectItem key={u.id} value={u.code} className="text-xs">
+                                {u.code}{" "}
+                                <span className="text-muted-foreground text-[10px]">
+                                  ({u.name})
+                                </span>
+                              </SelectItem>
+                            ))}
+                            {!configuredUnits.some(
+                              (u) => u.code === (item.unit || defaultUnit),
+                            ) && (
+                              <SelectItem value={item.unit || defaultUnit} className="text-xs">
+                                {item.unit || defaultUnit}
+                              </SelectItem>
+                            )}
+                          </SelectContent>
+                        </Select>
                       </div>
                       <div className="flex items-center gap-1 flex-1 sm:flex-none">
                         <span className="sm:hidden text-xs text-muted-foreground shrink-0">€:</span>
@@ -425,7 +473,7 @@ export function DocumentEditor(props: Props) {
                           onChange={(e) =>
                             updateItem(index, { unit_price: Number(e.target.value) })
                           }
-                          className="bg-background w-full sm:w-24 font-mono"
+                          className="bg-background w-full sm:w-[95px] font-mono"
                         />
                       </div>
                       <Button
@@ -444,12 +492,29 @@ export function DocumentEditor(props: Props) {
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="IVA %">
-                  <Input
-                    type="number"
-                    value={value.vat_rate}
-                    onChange={(e) => set({ vat_rate: Number(e.target.value) })}
-                  />
+                <Field label="Aliquota IVA">
+                  <Select
+                    value={String(value.vat_rate)}
+                    onValueChange={(val) => set({ vat_rate: Number(val) })}
+                  >
+                    <SelectTrigger className="bg-background">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {configuredVatRates.map((vr) => (
+                        <SelectItem key={vr.id} value={String(vr.rate)} className="text-xs">
+                          {vr.rate}% {vr.label ? `· ${vr.label}` : ""}
+                        </SelectItem>
+                      ))}
+                      {!configuredVatRates.some(
+                        (vr) => Number(vr.rate) === Number(value.vat_rate),
+                      ) && (
+                        <SelectItem value={String(value.vat_rate)} className="text-xs">
+                          {value.vat_rate}% (Personalizzata)
+                        </SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
                 </Field>
                 <div className="flex items-end justify-end">
                   <div className="text-right">

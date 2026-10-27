@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppLayout } from "@/components/AppLayout";
+import { KPISummaryCard } from "@/components/KPISummaryCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -424,7 +425,7 @@ function AgendaPage() {
       month: "long",
     });
     const timeFormatted = formatTimeOnly(appointment.starts_at);
-    const msg = `Salve ${client.name || ""}, le ricordiamo l'appuntamento con Innovazione Termica programmato per ${dateFormatted} alle ore ${timeFormatted} per: ${appointment.title || "intervento"}. Restiamo a disposizione per qualsiasi informazione o conferma.`;
+    const msg = `Salve ${client.name || ""}, le ricordiamo l'appuntamento con Azienda Demo Srl programmato per ${dateFormatted} alle ore ${timeFormatted} per: ${appointment.title || "intervento"}. Restiamo a disposizione per qualsiasi informazione o conferma.`;
     const url = `https://wa.me/${clean}?text=${encodeURIComponent(msg)}`;
     window.open(url, "_blank", "noopener,noreferrer");
   };
@@ -439,19 +440,18 @@ function AgendaPage() {
           <Button
             type="button"
             variant="outline"
-            size="sm"
             onClick={handleOpenMonthDialog}
-            className="h-8.5 px-2.5 sm:px-3 gap-1.5 text-xs font-medium border-border bg-card hover:bg-muted/50 rounded-lg cursor-pointer shadow-xs shrink-0"
+            className="h-9 px-2.5 sm:px-3 gap-1.5 text-xs sm:text-sm font-medium border-border/80 bg-card hover:bg-muted/50 rounded-lg cursor-pointer shadow-xs shrink-0"
             title="Apri calendario mensile completo"
           >
             <Calendar className="size-4 text-primary" />
             <span className="hidden sm:inline">Calendario mese</span>
-            <span className="sm:hidden">Mese</span>
+            <span className="sm:hidden text-xs">Mese</span>
           </Button>
 
           <Button
             onClick={() => openNew(selected)}
-            className="bg-primary hover:bg-primary/90 text-primary-foreground font-medium px-2.5 sm:px-4 py-2 shadow-xs rounded-lg gap-1.5 shrink-0 cursor-pointer h-8.5"
+            className="h-9 px-3 sm:px-4 text-xs sm:text-sm bg-primary hover:bg-primary/90 text-primary-foreground font-semibold shadow-xs rounded-lg gap-1.5 shrink-0 cursor-pointer"
           >
             <div className="flex items-center gap-1">
               <Plus className="size-3.5 stroke-[2.5]" />
@@ -467,108 +467,49 @@ function AgendaPage() {
         {/* ======================================================== */}
         {/* 1. INDICATORI RAPIDI (KPI OVERVIEW IDENTICO AL RESTO)     */}
         {/* ======================================================== */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4 w-full max-w-full min-w-0">
-          <button
-            type="button"
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 w-full min-w-0">
+          <KPISummaryCard
+            label="Tutti gli appuntamenti"
+            value={stats.all}
+            hint="Totale pianificati"
+            icon={CalendarDays}
+            tone="primary"
+            isActive={dateFilterMode === "tutti" && statusFilter === "tutti"}
             onClick={() => {
               setDateFilterMode("tutti");
               setStatusFilter("tutti");
             }}
-            className={cn(
-              "rounded-xl border p-3 sm:p-4 text-left transition-all bg-card shadow-xs flex flex-col justify-between min-h-[88px] sm:min-h-[96px] cursor-pointer min-w-0 overflow-hidden",
-              dateFilterMode === "tutti" && statusFilter === "tutti"
-                ? "border-primary ring-1 ring-primary/20 shadow-xs"
-                : "border-border hover:bg-muted/30",
-            )}
-          >
-            <div className="flex items-center justify-between text-muted-foreground gap-1">
-              <span className="text-xs font-medium truncate">Tutti gli appuntamenti</span>
-              <CalendarDays className="size-3.5 sm:size-4 text-primary shrink-0" />
-            </div>
-            <div>
-              <p className="text-xl sm:text-2xl font-bold text-foreground font-mono tabular-nums leading-tight mt-1">
-                {stats.all}
-              </p>
-              <p className="text-[10px] sm:text-xs text-muted-foreground/80 mt-0.5 truncate">
-                Totale pianificati
-              </p>
-            </div>
-          </button>
-
-          <button
-            type="button"
+          />
+          <KPISummaryCard
+            label="In programma oggi"
+            value={stats.today}
+            hint="Fissati per oggi"
+            icon={Calendar}
+            tone="blue"
+            isActive={dateFilterMode === "oggi"}
             onClick={() => {
               handleSelectToday();
               setStatusFilter("tutti");
             }}
-            className={cn(
-              "rounded-xl border p-3 sm:p-4 text-left transition-all bg-card shadow-xs flex flex-col justify-between min-h-[88px] sm:min-h-[96px] cursor-pointer min-w-0 overflow-hidden",
-              dateFilterMode === "oggi"
-                ? "border-primary ring-1 ring-primary/20 shadow-xs"
-                : "border-border hover:bg-muted/30",
-            )}
-          >
-            <div className="flex items-center justify-between text-muted-foreground gap-1">
-              <span className="text-xs font-medium truncate">In programma oggi</span>
-              <Calendar className="size-3.5 sm:size-4 text-primary shrink-0" />
-            </div>
-            <div>
-              <p className="text-xl sm:text-2xl font-bold text-foreground font-mono tabular-nums leading-tight mt-1">
-                {stats.today}
-              </p>
-              <p className="text-[10px] sm:text-xs text-muted-foreground/80 mt-0.5 truncate">
-                Fissati per oggi
-              </p>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setStatusFilter("confermato")}
-            className={cn(
-              "rounded-xl border p-3 sm:p-4 text-left transition-all bg-card shadow-xs flex flex-col justify-between min-h-[88px] sm:min-h-[96px] cursor-pointer min-w-0 overflow-hidden",
-              statusFilter === "confermato"
-                ? "border-amber-500 ring-1 ring-amber-500/20 shadow-xs"
-                : "border-border hover:bg-muted/30",
-            )}
-          >
-            <div className="flex items-center justify-between text-amber-700 dark:text-amber-400 gap-1">
-              <span className="text-xs font-medium truncate">Confermati</span>
-              <CheckCircle2 className="size-3.5 sm:size-4 shrink-0" />
-            </div>
-            <div>
-              <p className="text-xl sm:text-2xl font-bold text-foreground font-mono tabular-nums leading-tight mt-1">
-                {stats.confirmed}
-              </p>
-              <p className="text-[10px] sm:text-xs text-amber-600/80 mt-0.5 truncate">
-                Pronti per intervento
-              </p>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setStatusFilter("completato")}
-            className={cn(
-              "rounded-xl border p-3 sm:p-4 text-left transition-all bg-card shadow-xs flex flex-col justify-between min-h-[88px] sm:min-h-[96px] cursor-pointer min-w-0 overflow-hidden",
-              statusFilter === "completato"
-                ? "border-emerald-500 ring-1 ring-emerald-500/20 shadow-xs"
-                : "border-border hover:bg-muted/30",
-            )}
-          >
-            <div className="flex items-center justify-between text-emerald-700 dark:text-emerald-400 gap-1">
-              <span className="text-xs font-medium truncate">Completati</span>
-              <Check className="size-3.5 sm:size-4 shrink-0" />
-            </div>
-            <div>
-              <p className="text-xl sm:text-2xl font-bold text-foreground font-mono tabular-nums leading-tight mt-1">
-                {stats.completed}
-              </p>
-              <p className="text-[10px] sm:text-xs text-emerald-600/80 mt-0.5 truncate">
-                Interventi conclusi
-              </p>
-            </div>
-          </button>
+          />
+          <KPISummaryCard
+            label="Confermati"
+            value={stats.confirmed}
+            hint="Pronti per intervento"
+            icon={CheckCircle2}
+            tone="amber"
+            isActive={statusFilter === "confermato"}
+            onClick={() => setStatusFilter(statusFilter === "confermato" ? "tutti" : "confermato")}
+          />
+          <KPISummaryCard
+            label="Completati"
+            value={stats.completed}
+            hint="Interventi conclusi"
+            icon={Check}
+            tone="emerald"
+            isActive={statusFilter === "completato"}
+            onClick={() => setStatusFilter(statusFilter === "completato" ? "tutti" : "completato")}
+          />
         </div>
 
         {/* ======================================================== */}

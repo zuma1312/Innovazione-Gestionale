@@ -26,6 +26,7 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { AppLayout } from "@/components/AppLayout";
+import { KPISummaryCard } from "@/components/KPISummaryCard";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -67,12 +68,12 @@ import type { DocTemplate } from "@/lib/doc";
 export const Route = createFileRoute("/_authenticated/fatture")({
   head: () => ({
     meta: [
-      { title: "Fatture — INNOVAZIONE TERMICA" },
+      { title: "Fatture — Azienda Demo Srl" },
       {
         name: "description",
         content: "Emissione e gestione fatture con PDF, tracciamento incassi e scadenze.",
       },
-      { property: "og:title", content: "Fatture — INNOVAZIONE TERMICA" },
+      { property: "og:title", content: "Fatture — Azienda Demo Srl" },
       {
         property: "og:description",
         content: "Fatture elettroniche e cartacee con riepilogo incassi e PDF in tempo reale.",
@@ -142,7 +143,7 @@ function FatturePage() {
       number,
       date: data.date,
       secondary_date: data.due_date,
-      items: [emptyItem()],
+      items: [emptyItem(company.data?.default_unit_of_measure || "pz")],
       vat_rate: Number(company.data?.default_vat_rate || 22),
       notes: defaultNotes,
       status: "emessa",
@@ -222,7 +223,9 @@ function FatturePage() {
       number: inv.number,
       date: inv.date,
       secondary_date: inv.due_date,
-      items: (inv.items && inv.items.length > 0 ? inv.items : [emptyItem()]) as any,
+      items: (inv.items && inv.items.length > 0
+        ? inv.items
+        : [emptyItem(company.data?.default_unit_of_measure || "pz")]) as any,
       vat_rate: Number(inv.vat_rate ?? company.data?.default_vat_rate ?? 22),
       notes: inv.notes || "",
       exclusions: inv.exclusions || "",
@@ -436,7 +439,7 @@ function FatturePage() {
     }
 
     const totalFmt = formatCurrency(Number(inv?.total || 0));
-    const msg = `Gentile ${clientName || ""}, le trasmettiamo il riepilogo della Fattura N. ${inv?.number || ""} di ${totalFmt} da parte di Innovazione Termica. Restiamo a disposizione per qualsiasi chiarimento.`;
+    const msg = `Gentile ${clientName || ""}, le trasmettiamo il riepilogo della Fattura N. ${inv?.number || ""} di ${totalFmt} da parte di Azienda Demo Srl. Restiamo a disposizione per qualsiasi chiarimento.`;
 
     const url = `https://wa.me/${clean}?text=${encodeURIComponent(msg)}`;
     window.open(url, "_blank", "noopener,noreferrer");
@@ -633,7 +636,7 @@ function FatturePage() {
       actions={
         <Button
           onClick={handleOpenQuickCreate}
-          className="bg-primary hover:bg-primary/90 text-primary-foreground font-medium px-2.5 sm:px-4 py-2 shadow-xs rounded-lg gap-1.5 shrink-0"
+          className="h-9 px-3 sm:px-4 text-xs sm:text-sm bg-primary hover:bg-primary/90 text-primary-foreground font-semibold shadow-xs rounded-lg gap-1.5 shrink-0 cursor-pointer"
         >
           <div className="flex items-center gap-1">
             <Plus className="size-3.5 stroke-[2.5]" />
@@ -646,98 +649,46 @@ function FatturePage() {
     >
       <div className="space-y-5">
         {/* Indicatori Rapidi (KPI Cards interattive) */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-          <button
-            type="button"
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 w-full min-w-0">
+          <KPISummaryCard
+            label="Totale fatturato"
+            value={formatCurrency(stats.totalInvoiced)}
+            hint={`${stats.allCount} fatture emesse`}
+            icon={Receipt}
+            tone="primary"
+            isActive={statusFilter === "all"}
             onClick={() => setStatusFilter("all")}
-            className={`rounded-xl border p-3.5 sm:p-4 text-left transition-all bg-card shadow-xs flex flex-col justify-between min-h-[96px] sm:min-h-[104px] ${
-              statusFilter === "all"
-                ? "border-primary ring-1 ring-primary/20 shadow-xs"
-                : "border-border hover:bg-muted/30"
-            }`}
-          >
-            <div className="flex items-center justify-between text-muted-foreground">
-              <span className="text-xs font-medium">Totale fatturato</span>
-              <Receipt className="size-4 text-primary" />
-            </div>
-            <div>
-              <p className="text-xl sm:text-2xl font-bold text-foreground font-mono tabular-nums mt-1">
-                {formatCurrency(stats.totalInvoiced)}
-              </p>
-              <p className="text-[11px] sm:text-xs text-muted-foreground/80 mt-0.5 truncate">
-                {stats.allCount} fatture emesse
-              </p>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setStatusFilter("pagata")}
-            className={`rounded-xl border p-3.5 sm:p-4 text-left transition-all bg-card shadow-xs flex flex-col justify-between min-h-[96px] sm:min-h-[104px] ${
-              statusFilter === "pagata"
-                ? "border-emerald-500 ring-1 ring-emerald-500/20 shadow-xs"
-                : "border-border hover:bg-muted/30"
-            }`}
-          >
-            <div className="flex items-center justify-between text-muted-foreground">
-              <span className="text-xs font-medium">Incassato</span>
-              <CheckCircle2 className="size-4 text-emerald-500" />
-            </div>
-            <div>
-              <p className="text-xl sm:text-2xl font-bold text-emerald-600 dark:text-emerald-400 font-mono tabular-nums mt-1">
-                {formatCurrency(stats.totalPaid)}
-              </p>
-              <p className="text-[11px] sm:text-xs text-muted-foreground/80 mt-0.5 truncate">
-                {stats.countPaid} fatture saldate
-              </p>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setStatusFilter("emessa")}
-            className={`rounded-xl border p-3.5 sm:p-4 text-left transition-all bg-card shadow-xs flex flex-col justify-between min-h-[96px] sm:min-h-[104px] ${
-              statusFilter === "emessa"
-                ? "border-blue-500 ring-1 ring-blue-500/20 shadow-xs"
-                : "border-border hover:bg-muted/30"
-            }`}
-          >
-            <div className="flex items-center justify-between text-muted-foreground">
-              <span className="text-xs font-medium">Da incassare</span>
-              <Clock className="size-4 text-blue-500" />
-            </div>
-            <div>
-              <p className="text-xl sm:text-2xl font-bold text-blue-600 dark:text-blue-400 font-mono tabular-nums mt-1">
-                {formatCurrency(stats.totalPending)}
-              </p>
-              <p className="text-[11px] sm:text-xs text-muted-foreground/80 mt-0.5 truncate">
-                {stats.countPending} in attesa
-              </p>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setStatusFilter("insoluta")}
-            className={`rounded-xl border p-3.5 sm:p-4 text-left transition-all bg-card shadow-xs flex flex-col justify-between min-h-[96px] sm:min-h-[104px] ${
-              statusFilter === "insoluta"
-                ? "border-rose-500 ring-1 ring-rose-500/20 shadow-xs"
-                : "border-border hover:bg-muted/30"
-            }`}
-          >
-            <div className="flex items-center justify-between text-muted-foreground">
-              <span className="text-xs font-medium">Insoluti</span>
-              <AlertTriangle className="size-4 text-rose-500" />
-            </div>
-            <div>
-              <p className="text-xl sm:text-2xl font-bold text-rose-600 dark:text-rose-400 font-mono tabular-nums mt-1">
-                {formatCurrency(stats.totalOverdue)}
-              </p>
-              <p className="text-[11px] sm:text-xs text-muted-foreground/80 mt-0.5 truncate">
-                {stats.countOverdue} scadute
-              </p>
-            </div>
-          </button>
+          />
+          <KPISummaryCard
+            label="Incassato"
+            value={formatCurrency(stats.totalPaid)}
+            hint={`${stats.countPaid} fatture saldate`}
+            icon={CheckCircle2}
+            tone="emerald"
+            valueClassName="text-emerald-600 dark:text-emerald-400"
+            isActive={statusFilter === "pagata"}
+            onClick={() => setStatusFilter(statusFilter === "pagata" ? "all" : "pagata")}
+          />
+          <KPISummaryCard
+            label="Da incassare"
+            value={formatCurrency(stats.totalPending)}
+            hint={`${stats.countPending} in attesa`}
+            icon={Clock}
+            tone="blue"
+            valueClassName="text-blue-600 dark:text-blue-400"
+            isActive={statusFilter === "emessa"}
+            onClick={() => setStatusFilter(statusFilter === "emessa" ? "all" : "emessa")}
+          />
+          <KPISummaryCard
+            label="Insoluti"
+            value={formatCurrency(stats.totalOverdue)}
+            hint={`${stats.countOverdue} scadute`}
+            icon={AlertTriangle}
+            tone="rose"
+            valueClassName="text-rose-600 dark:text-rose-400"
+            isActive={statusFilter === "insoluta"}
+            onClick={() => setStatusFilter(statusFilter === "insoluta" ? "all" : "insoluta")}
+          />
         </div>
 
         {/* Card Contenitore Principale con Tabella e Filtri */}
